@@ -13,9 +13,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "bundleIdentifier": "com.rosalio.proyectofn",
       "supportsTablet": true
     },
     "android": {
+      "package": "com.rosalio.proyectofn",
+      "googleServicesFile": "./android/app/google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -24,6 +27,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "3adaf9cd-0660-49b3-b0de-fed81477ecdb"
+      }
     }
   }
 }
