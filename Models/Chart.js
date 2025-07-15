@@ -1,342 +1,268 @@
-import React from 'react';
-import { View, StyleSheet, Text, ScrollView, TouchableOpacity } from 'react-native';
-import { LineChart, BarChart } from 'react-native-gifted-charts';
+
+import { useState, useEffect } from 'react';
+import {
+    View,
+    StyleSheet,
+    Text,
+    ScrollView,
+    ActivityIndicator,
+    Alert
+} from 'react-native';
+import { PieChart } from 'react-native-gifted-charts'; 
 import { Ionicons } from '@expo/vector-icons';
 
-export default function ChartScreen() {
-  // Datos de crecimiento (peso en kg)
-  const weightData = [
-    { value: 3.2, label: 'Nac', date: '01 Ene', customDataPoint: () => (
-      <View style={styles.customDataPoint}>
-        <Ionicons name="body" size={16} color="#e74c3c" />
-      </View>
-    )},
-    { value: 4.1, label: '1m', date: '01 Feb' },
-    { value: 5.0, label: '2m', date: '01 Mar' },
-    { value: 5.8, label: '3m', date: '01 Abr' },
-    { value: 6.5, label: '4m', date: '01 May' },
-    { value: 7.1, label: '5m', date: '01 Jun' },
-    { value: 7.6, label: '6m', date: '01 Jul' },
-  ];
+// ✅ Recibe userId del padre como prop
+export default function ChartScreen({ userId }) {
+    const [alertas, setAlertas] = useState([]);
+    const [chartData, setChartData] = useState([]); 
+    const [loading, setLoading] = useState(true);
 
-  // Datos de alertas por mes
-  const alertData = [
-    { value: 2, label: 'Ene', frontColor: '#f39c12' },
-    { value: 1, label: 'Feb', frontColor: '#2ecc71' },
-    { value: 3, label: 'Mar', frontColor: '#e74c3c' },
-    { value: 0, label: 'Abr', frontColor: '#2ecc71' },
-    { value: 1, label: 'May', frontColor: '#f39c12' },
-    { value: 0, label: 'Jun', frontColor: '#2ecc71' },
-  ];
+    const SQL_API_BASE = 'http://localhost:3000';
+    const MONGO_API_BASE = 'http://172.18.2.158:5000';
 
-  // Datos de temperatura promedio
-  const temperatureData = [
-    { value: 36.5, label: 'Lun' },
-    { value: 36.7, label: 'Mar' },
-    { value: 36.8, label: 'Mié' },
-    { value: 36.6, label: 'Jue' },
-    { value: 36.9, label: 'Vie' },
-    { value: 37.0, label: 'Sáb' },
-    { value: 36.8, label: 'Dom' },
-  ];
+    useEffect(() => {
+        const fetchAlertsForPadre = async () => {
+            if (!userId) {
+                console.log('AlertasPadreScreen: userId del padre no está disponible.');
+                setLoading(false);
+                return;
+            }
 
-  const [activeTab, setActiveTab] = React.useState('growth');
+            setLoading(true);
 
-  return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.screenTitle}>Monitoreo del Bebé</Text>
-      
-      {/* Selector de pestañas */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'growth' && styles.activeTab]}
-          onPress={() => setActiveTab('growth')}
-        >
-          <Text style={styles.tabText}>Crecimiento</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'alerts' && styles.activeTab]}
-          onPress={() => setActiveTab('alerts')}
-        >
-          <Text style={styles.tabText}>Alertas</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.tabButton, activeTab === 'health' && styles.activeTab]}
-          onPress={() => setActiveTab('health')}
-        >
-          <Text style={styles.tabText}>Salud</Text>
-        </TouchableOpacity>
-      </View>
+            try {
+                // ⚠️ Asumimos que tienes un endpoint para obtener la cuna del bebé de un padre
+                // Por ejemplo: GET /api/bebes/padre/123 -> { idCuna: 4 }
+                // Aquí lo simulamos, pero debes conectarlo a tu backend real.
+                console.log(`AlertasPadreScreen: Buscando cuna para el padre userId: ${userId}`);
+                
+              
+                const cunaIdSql = 4; // SIMULADO: Asumimos que el padre tiene asignada la cuna 4
+                if (!cunaIdSql) {
+                    Alert.alert("Sin Bebé Asignado", "No se encontró un bebé asignado a este usuario.");
+                    setLoading(false);
+                    return;
+                }
+               
+                const cunaMongoId = `CUNA${String(cunaIdSql).padStart(3, '0')}`;
+                console.log('AlertasPadreScreen: Cuna Mongo para consulta:', cunaMongoId);
 
-      {activeTab === 'growth' && (
-        <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>Evolución del Peso</Text>
-          <LineChart
-            data={weightData}
-            color="#3498db"
-            thickness={3}
-            curved
-            isAnimated
-            animateOnDataChange
-            animationDuration={1200}
-            startFillColor="#3498db"
-            endFillColor="#EBF5FB"
-            startOpacity={0.8}
-            endOpacity={0.1}
-            spacing={50}
-            initialSpacing={10}
-            yAxisColor="#bdc3c7"
-            xAxisColor="#bdc3c7"
-            yAxisThickness={0.5}
-            xAxisThickness={0.5}
-            rulesColor="#ecf0f1"
-            rulesType="solid"
-            yAxisTextStyle={{ color: '#7f8c8d' }}
-            xAxisLabelTextStyle={{ color: '#7f8c8d', width: 60 }}
-            pointerConfig={{
-              pointerStripHeight: 160,
-              pointerStripColor: 'lightgray',
-              pointerStripWidth: 1,
-              pointerColor: '#3498db',
-              radius: 6,
-              pointerLabelWidth: 80,
-              pointerLabelHeight: 40,
-              pointerLabelComponent: (items) => {
-                return (
-                  <View style={styles.pointerLabel}>
-                    <Text style={styles.pointerText}>{items[0].date}</Text>
-                    <Text style={styles.pointerValue}>{items[0].value} kg</Text>
-                  </View>
-                );
-              },
-            }}
-          />
-          <View style={styles.legendContainer}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendColor, { backgroundColor: '#3498db' }]} />
-              <Text style={styles.legendText}>Peso (kg)</Text>
+                // Obtener alertas de MongoDB para esa cuna específica
+                const mongoAlertsRes = await fetch(`${MONGO_API_BASE}/alertas?cunas=${cunaMongoId}`);
+                if (!mongoAlertsRes.ok) {
+                    throw new Error('No se pudieron obtener las alertas de la cuna.');
+                }
+                const mongoAlertsData = await mongoAlertsRes.json();
+                const fetchedAlerts = mongoAlertsData.data || mongoAlertsData;
+
+                setAlertas(fetchedAlerts);
+                processDataForChart(fetchedAlerts); // ✅ Procesar datos para la gráfica
+
+            } catch (err) {
+                console.error('❌ AlertasPadreScreen: Error general al cargar alertas:', err);
+                Alert.alert("Error de Carga", `No se pudieron cargar las alertas. Detalle: ${err.message}`);
+                setAlertas([]);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchAlertsForPadre();
+    }, [userId]);
+
+    // Función para clasificar el nivel de la alerta (reutilizada)
+    const clasificaNivel = (al) => {
+        const tipo = al.tipo.toLowerCase();
+        if (tipo.includes('critica') || (al.tipo.includes('Oxigenación baja') && al.valor <= 85)) return 'Crítico';
+        if (tipo.includes('media') || (al.tipo.includes('Oxigenación baja') && al.valor > 85 && al.valor <= 90)) return 'Medio';
+        return 'Leve';
+    };
+
+
+    const getIconColor = (nivel) => {
+        switch (nivel) {
+            case 'Crítico': return '#e74c3c'; // Rojo
+            case 'Medio': return '#f39c12';   // Naranja
+            default: return '#3498db';        // Azul
+        }
+    };
+    
+    // ✅ Función para procesar las alertas y generar los datos para la gráfica
+    const processDataForChart = (alertsToProcess) => {
+        const counts = { 'Crítico': 0, 'Medio': 0, 'Leve': 0 };
+        alertsToProcess.forEach(al => {
+            const nivel = clasificaNivel(al);
+            counts[nivel]++;
+        });
+
+        const dataForChart = Object.keys(counts).map(nivel => ({
+            value: counts[nivel],
+            color: getIconColor(nivel),
+            label: nivel,
+            text: `${counts[nivel]}`, // Muestra el número en la gráfica
+        })).filter(item => item.value > 0); // Solo mostrar niveles con alertas
+
+        setChartData(dataForChart);
+    };
+
+    if (loading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#6c5ce7" />
+                <Text style={styles.loadingText}>Cargando estado del bebé...</Text>
             </View>
-          </View>
-        </View>
-      )}
+        );
+    }
 
-      {activeTab === 'alerts' && (
-        <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>Alertas Mensuales</Text>
-          <BarChart
-            data={alertData}
-            barWidth={22}
-            spacing={40}
-            roundedTop
-            roundedBottom={false}
-            frontColor="lightgray"
-            yAxisThickness={0.5}
-            xAxisThickness={0.5}
-            yAxisTextStyle={{ color: '#7f8c8d' }}
-            xAxisLabelTextStyle={{ color: '#7f8c8d' }}
-            noOfSections={3}
-            maxValue={4}
-            renderTooltip={(item) => (
-              <View style={styles.tooltip}>
-                <Text style={styles.tooltipText}>{item.value} alerta{item.value !== 1 ? 's' : ''}</Text>
-              </View>
-            )}
-          />
-          <View style={styles.legendContainer}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendColor, { backgroundColor: '#e74c3c' }]} />
-              <Text style={styles.legendText}>Críticas</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendColor, { backgroundColor: '#f39c12' }]} />
-              <Text style={styles.legendText}>Advertencias</Text>
-            </View>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendColor, { backgroundColor: '#2ecc71' }]} />
-              <Text style={styles.legendText}>Normales</Text>
-            </View>
-          </View>
-        </View>
-      )}
+    const totalAlerts = alertas.length;
 
-      {activeTab === 'health' && (
-        <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>Temperatura Semanal</Text>
-          <LineChart
-            data={temperatureData}
-            color="#e74c3c"
-            thickness={3}
-            isAnimated
-            yAxisOffset={36}
-            yAxisSuffix="°C"
-            spacing={40}
-            initialSpacing={10}
-            yAxisColor="#bdc3c7"
-            xAxisColor="#bdc3c7"
-            yAxisThickness={0.5}
-            xAxisThickness={0.5}
-            rulesColor="#ecf0f1"
-            yAxisTextStyle={{ color: '#7f8c8d' }}
-            xAxisLabelTextStyle={{ color: '#7f8c8d' }}
-            dataPointsColor="#e74c3c"
-            dataPointsRadius={6}
-            pointerConfig={{
-              pointerStripHeight: 140,
-              pointerStripColor: 'lightgray',
-              pointerStripWidth: 1,
-              pointerColor: '#e74c3c',
-              radius: 6,
-              pointerLabelWidth: 80,
-              pointerLabelHeight: 40,
-              pointerLabelComponent: (items) => {
-                return (
-                  <View style={styles.pointerLabel}>
-                    <Text style={styles.pointerText}>{items[0].label}</Text>
-                    <Text style={styles.pointerValue}>{items[0].value}°C</Text>
-                  </View>
-                );
-              },
-            }}
-          />
-          <View style={styles.legendContainer}>
-            <View style={styles.legendItem}>
-              <View style={[styles.legendColor, { backgroundColor: '#e74c3c' }]} />
-              <Text style={styles.legendText}>Temperatura</Text>
+    return (
+        <ScrollView style={styles.container}>
+            <Text style={styles.screenTitle}>Resumen de Bienestar</Text>
+
+            {/* --- SECCIÓN DE GRÁFICA --- */}
+            <View style={styles.chartSection}>
+                <Text style={styles.sectionTitle}>Distribución de Alertas</Text>
+                {totalAlerts > 0 ? (
+                    <View style={styles.pieChartContainer}>
+                        <PieChart
+                            data={chartData}
+                            donut
+                            radius={90}
+                            innerRadius={60}
+                            textSize={16}
+                            textColor="white"
+                            fontWeight="bold"
+                            focusOnPress
+                            centerLabelComponent={() => (
+                                <View style={styles.pieCenterLabel}>
+                                    <Text style={styles.pieCenterValue}>{totalAlerts}</Text>
+                                    <Text style={styles.pieCenterText}>Alertas</Text>
+                                </View>
+                            )}
+                        />
+                    </View>
+                ) : (
+                    <View style={styles.noDataContainer}>
+                        <Ionicons name="checkmark-circle" size={48} color="#2ecc71" />
+                        <Text style={styles.noDataText}>¡Todo en orden! No hay alertas.</Text>
+                    </View>
+                )}
+                 {/* Leyenda del gráfico */}
+                <View style={styles.legendContainer}>
+                    {chartData.map(item => (
+                        <View key={item.label} style={styles.legendItem}>
+                            <View style={[styles.legendColor, { backgroundColor: item.color }]} />
+                            <Text style={styles.legendText}>{item.label} ({item.value})</Text>
+                        </View>
+                    ))}
+                </View>
             </View>
-          </View>
-          <View style={styles.referenceLine}>
-            <Text style={styles.referenceText}>Rango normal: 36.5°C - 37.5°C</Text>
-          </View>
-        </View>
-      )}
-    </ScrollView>
-  );
+
+            {/* --- SECCIÓN DE LISTA DE ALERTAS --- */}
+            <View style={styles.listSection}>
+                <Text style={styles.sectionTitle}>Historial Reciente</Text>
+                {alertas.length === 0 ? (
+                     <Text style={styles.noDataListText}>No hay registros para mostrar.</Text>
+                ) : (
+                    alertas.map((al, idx) => {
+                        const nivel = clasificaNivel(al);
+                        const iconColor = getIconColor(nivel);
+                        return (
+                            <View key={idx} style={[styles.alertItem, { borderLeftColor: iconColor }]}>
+                                <View style={styles.alertHeader}>
+                                    <Ionicons name="warning" size={22} color={iconColor} />
+                                    <Text style={[styles.alertText, { color: iconColor }]}>
+                                        {nivel} - {al.tipo}
+                                    </Text>
+                                </View>
+                                <Text style={styles.alertSubText}>Valor registrado: {al.valor}</Text>
+                                <Text style={styles.alertTimestamp}>
+                                    {new Date(al.timestamp).toLocaleString('es-MX')}
+                                </Text>
+                            </View>
+                        );
+                    })
+                )}
+            </View>
+        </ScrollView>
+    );
 }
 
+// --- ESTILOS ---
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-    padding: 16,
-  },
-  screenTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
-  tabContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 20,
-    backgroundColor: '#fff',
-    borderRadius: 10,
-    padding: 5,
-    elevation: 2,
-  },
-  tabButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-  },
-  activeTab: {
-    backgroundColor: '#3498db',
-  },
-  tabText: {
-    color: '#7f8c8d',
-    fontWeight: '500',
-  },
-  activeTabText: {
-    color: '#fff',
-  },
-  chartContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    elevation: 2,
-  },
-  chartTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-    marginBottom: 15,
-    textAlign: 'center',
-  },
-  legendContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 15,
-    flexWrap: 'wrap',
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 10,
-    marginVertical: 5,
-  },
-  legendColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 5,
-  },
-  legendText: {
-    fontSize: 12,
-    color: '#7f8c8d',
-  },
-  pointerLabel: {
-    backgroundColor: '#fff',
-    padding: 6,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#ecf0f1',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  pointerText: {
-    fontSize: 10,
-    color: '#7f8c8d',
-  },
-  pointerValue: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#2c3e50',
-  },
-  tooltip: {
-    backgroundColor: '#2c3e50',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  tooltipText: {
-    color: '#fff',
-    fontSize: 12,
-  },
-  referenceLine: {
-    marginTop: 10,
-    padding: 8,
-    backgroundColor: '#EBF5FB',
-    borderRadius: 6,
-    alignSelf: 'center',
-  },
-  referenceText: {
-    color: '#3498db',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  customDataPoint: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: 2,
-    borderColor: '#e74c3c',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+    container: { flex: 1, padding: 16, backgroundColor: '#f9f9fb' },
+    screenTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#2c3e50',
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#34495e',
+        marginBottom: 16,
+    },
+    chartSection: {
+        backgroundColor: '#ffffff',
+        padding: 20,
+        borderRadius: 16,
+        marginBottom: 24,
+        alignItems: 'center',
+        elevation: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+    },
+    pieChartContainer: {
+        marginVertical: 20,
+    },
+    pieCenterLabel: { justifyContent: 'center', alignItems: 'center' },
+    pieCenterText: { fontSize: 16, color: '#7f8c8d' },
+    pieCenterValue: { fontSize: 30, fontWeight: 'bold', color: '#2c3e50' },
+    legendContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+        marginTop: 20,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginHorizontal: 15,
+        marginBottom: 10,
+    },
+    legendColor: {
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        marginRight: 8,
+    },
+    legendText: {
+        fontSize: 14,
+        color: '#34495e',
+    },
+    listSection: {
+        paddingBottom: 40,
+    },
+    alertItem: {
+        backgroundColor: '#ffffff',
+        padding: 16,
+        marginBottom: 12,
+        borderRadius: 12,
+        borderLeftWidth: 5,
+        elevation: 2,
+    },
+    alertHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+    alertText: { fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
+    alertSubText: { fontSize: 14, color: '#636e72', marginLeft: 8 },
+    alertTimestamp: { fontSize: 12, color: '#b2bec3', marginTop: 8, textAlign: 'right' },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f9f9fb' },
+    loadingText: { marginTop: 10, fontSize: 16, color: '#6c5ce7' },
+    noDataContainer: { alignItems: 'center', paddingVertical: 30 },
+    noDataText: { marginTop: 10, fontSize: 16, color: '#27ae60', fontWeight: 'bold' },
+    noDataListText: { textAlign: 'center', marginTop: 20, color: '#636e72', fontStyle: 'italic' }
 });

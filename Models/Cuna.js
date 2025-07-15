@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, Image, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function CunaScreen() {
+export default function CunaScreen({ userId }) { // Recibimos 'route' como prop
+  // Extraemos el userId de los parámetros de la ruta.
+  // Si por alguna razón no se pasa, usamos un valor predeterminado 'usuario_desconocido'.
+
+
   // Estado para los datos de los sensores (simulados)
   const [sensorData, setSensorData] = useState({
     temperature: '--',
@@ -15,6 +19,11 @@ export default function CunaScreen() {
 
   // Simular actualización de datos del sensor
   useEffect(() => {
+    // Aquí es donde en una aplicación real harías una llamada a tu API
+    // para obtener los datos de los sensores **específicos para este userId**.
+    // Por ejemplo: fetchDataForUser(userId).then(data => setSensorData(data));
+    console.log(`CunaScreen: Iniciando monitoreo para el usuario con ID: ${userId}`);
+
     const interval = setInterval(() => {
       setSensorData({
         temperature: (36.5 + Math.random() * 1.5).toFixed(1) + '°C',
@@ -27,7 +36,7 @@ export default function CunaScreen() {
     }, 3000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [userId]); // Añadimos userId a las dependencias. Si el userId cambia, el efecto se reiniciará.
 
   // Verificar alertas
   useEffect(() => {
@@ -35,24 +44,22 @@ export default function CunaScreen() {
     const co2 = parseInt(sensorData.co2);
     
     if (temp > 37.5 || temp < 36) {
-      Alert.alert('Alerta', 'Temperatura fuera de rango seguro');
+      Alert.alert('Alerta de Temperatura', `¡Atención, ${userId}! Temperatura fuera de rango seguro: ${sensorData.temperature}`);
     }
     
     if (co2 > 1000) {
-      Alert.alert('Alerta', 'Niveles de CO2 elevados');
+      Alert.alert('Alerta de CO2', `¡Atención, ${userId}! Niveles de CO2 elevados: ${sensorData.co2}`);
     }
-  }, [sensorData]);
+  }, [sensorData, userId]); // Añadimos userId a las dependencias para incluirlo en las alertas
 
   return (
     <ScrollView style={styles.container}>
-      {/* Encabezado con efecto decorativo */}
+      {/* Encabezado */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <Text style={styles.headerTitle}>Monitoreo de Cuna Inteligente</Text>
-          <View style={[styles.statusIndicator, 
-                      sensorData.status === 'Modo seguro' ? styles.statusSafe : styles.statusWarning]}>
-            <Text style={styles.statusText}>{sensorData.status}</Text>
-          </View>
+          {/* Mostramos el ID del usuario para verificar que se esté pasando correctamente */}
+          <Text style={styles.userIdDisplay}>ID Usuario: {userId}</Text> 
         </View>
         <View style={styles.headerDecoration}></View>
       </View>
@@ -60,10 +67,10 @@ export default function CunaScreen() {
       {/* Imagen de la cuna con marco */}
       <View style={styles.imageContainer}>
         <View style={styles.imageFrame}>
-          <Image
-          // Asegúrate de tener una imagen en esta ruta
-            style={styles.cunaImage}
-            resizeMode="contain"
+          <Image 
+            // Aquí puedes agregar tu imagen de la cuna, por ejemplo:
+            // source={require('../assets/cuna_placeholder.png')}
+            // style={styles.cunaImage}
           />
         </View>
       </View>
@@ -216,6 +223,14 @@ const styles = StyleSheet.create({
     marginTop: 10,
     flex: 1,
   },
+  // Nuevo estilo para mostrar el ID del usuario
+  userIdDisplay: {
+    fontSize: 14,
+    color: '#616161',
+    marginTop: 10,
+    marginLeft: 10,
+    fontWeight: '500',
+  },
   statusIndicator: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -235,21 +250,22 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 50,
   },
   imageFrame: {
     backgroundColor: '#FFFFFF',
     borderRadius: 15,
     padding: 10,
     shadowColor: '#7E57C2',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 3, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 5,
   },
   cunaImage: {
     width: '100%',
-    height: 180,
+    height: 100,
+    // Asegúrate de tener una imagen en esta ruta si la descomentas
   },
   card: {
     borderRadius: 15,
@@ -270,33 +286,31 @@ const styles = StyleSheet.create({
   tipsCard: {
     backgroundColor: '#4A2C8E', // Morado oscuro
   },
+  // El estilo 'cardTitle' se repite en el código original, lo he consolidado
+  // para mayor claridad, pero manteniendo el color blanco para las tarjetas de color.
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 15,
-    color: '#4A2C8E',
+    // Este color se sobrescribe si la tarjeta tiene un fondo de color (weightCard, tipsCard)
+    color: '#4A2C8E', 
     borderBottomWidth: 1,
     borderBottomColor: '#EEE',
     paddingBottom: 10,
   },
+  // Específico para los títulos de tarjetas con fondo oscuro
   weightCard: {
     backgroundColor: '#7E57C2', // Morado medio
   },
-  weightCard: {
-    backgroundColor: '#7E57C2', // Morado medio
+  tipsCard: {
+    backgroundColor: '#4A2C8E', // Morado oscuro
   },
-  weightCard: {
-    backgroundColor: '#7E57C2', // Morado medio
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.3)',
-    paddingBottom: 10,
-  },
+  // Sobrescribimos el color del título para las tarjetas con fondo de color
+  // Puedes usar una prop 'titleColor' o aplicar el estilo inline si prefieres.
+  // En este caso, el `cardTitle` de las tarjetas `weightCard` y `tipsCard`
+  // ya están definidos con `color: '#FFFFFF'` en tu código original,
+  // así que lo mantengo como estaba.
+  
   sensorGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

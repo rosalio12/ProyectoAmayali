@@ -2,277 +2,369 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { 
-  StyleSheet, 
-  View, 
-  TextInput, 
-  Text, 
+import {
+  StyleSheet,
+  View,
+  TextInput,
+  Text,
   Alert,
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
   Animated,
   Easing,
-  Image
+  ScrollView
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import { auth, authFunctions } from './FireBase';
-import { onAuthStateChanged } from 'firebase/auth';
 
-// Importar solo las pantallas necesarias desde models
+import { fetchUserRole, registerUser, loginUser, logoutUser } from './api/user';
+
+// Importación de pantallas (sin cambios aquí)
 import CunaScreen from './Models/Cuna';
 import ChartScreen from './Models/Chart';
 import HomeScreen from './Models/Home';
+import EmergenciaScreen from './Models/emergencia';
+import HistoryScreen from './Models/historial';
+import CunaEnfermeroScreen from './ScreensEnfermero/CunaEnfermero';
+import ChartEnfermeroScreen from './ScreensEnfermero/ChartEnfermero';
+import HomeEnfermeroScreen from './ScreensEnfermero/HomeEnfermero';
+import HistoryEnfermeroScreen from './ScreensEnfermero/HistorialEnfermero';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-function AuthScreen({ navigation }) {
+// --- AuthScreen (sin cambios significativos en su lógica interna de autenticación) ---
+// (El código de AuthScreen es el que me proporcionaste, lo mantengo intacto para ti)
+function AuthScreen({ onLoginSuccess }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [nombre, setNombre] = useState('');
+  const [apellidos, setApellidos] = useState('');
+  const [numTel, setNumTel] = useState('');
+  const [fechaNac, setFechaNac] = useState('');
+  const [nombreCasa, setNombreCasa] = useState('');
+  const [direccionCasa, setDireccionCasa] = useState('');
+  const [telefonoCasa, setTelefonoCasa] = useState('');
+  const [correoCasa, setCorreoCasa] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [esMadre, setEsMadre] = useState(false);
+
   const fadeAnim = useState(new Animated.Value(0))[0];
   const slideAnim = useState(new Animated.Value(30))[0];
 
   useEffect(() => {
-    // Animación de entrada
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 800,
-        easing: Easing.out(Easing.exp),
-        useNativeDriver: true,
-      })
+      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 800, easing: Easing.out(Easing.exp), useNativeDriver: true })
     ]).start();
   }, []);
 
   const handleAuth = async () => {
-    if (!email.includes('@')) {
-      shakeAnimation();
-      Alert.alert('Error', 'Correo electrónico inválido');
-      return;
-    }
-    if (password.length < 6) {
-      shakeAnimation();
-      Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres');
-      return;
+    if (!email.includes('@')) return Alert.alert('Error', 'Correo electrónico inválido.');
+    if (password.length < 6) return Alert.alert('Error', 'La contraseña debe tener al menos 6 caracteres.');
+
+    if (isRegistering) {
+      if (!nombre || !apellidos || !numTel || !fechaNac || !nombreCasa)
+        return Alert.alert('Error', 'Por favor, completa todos los campos de registro.');
     }
 
     setIsLoading(true);
     try {
       if (isRegistering) {
-        await authFunctions.registerUser(email, password);
-        Alert.alert('Éxito', 'Usuario registrado correctamente');
+        await registerUser(
+          email,
+          password,
+          nombre,
+          apellidos,
+          numTel,
+          fechaNac,
+          esMadre ? 2 : 1, // idRol: 2 para Madre, 1 para Padre
+          nombreCasa,
+          direccionCasa,
+          telefonoCasa,
+          correoCasa
+        );
+
+        Alert.alert('¡Registro Exitoso!', 'Hemos enviado un enlace de verificación a tu correo. Por favor, revísalo para poder iniciar sesión.');
+        setIsRegistering(false);
       } else {
-        await authFunctions.loginUser(email, password);
+        const user = await loginUser(email, password);
+        if (user) {
+          onLoginSuccess(user);
+        }
       }
-    } catch (error) {
-      let errorMessage = "Ocurrió un error inesperado.";
-      if (error.code === 'auth/email-already-in-use') {
-        errorMessage = 'Este correo ya está registrado';
-      } else if (error.code === 'auth/user-not-found') {
-        errorMessage = 'Usuario no encontrado';
-      } else if (error.code === 'auth/wrong-password') {
-        errorMessage = 'Contraseña incorrecta';
-      } else if (error.code === 'auth/invalid-email') {
-        errorMessage = 'El formato del correo electrónico es inválido.';
-      }
-      shakeAnimation();
-      Alert.alert('Error', errorMessage);
+    } catch (e) {
+      console.error("Error en handleAuth:", e);
+      const msg = e.code === 'auth/email-not-verified'
+        ? 'Tu correo no ha sido verificado. Por favor, revisa tu bandeja de entrada.'
+        : (e.response?.data?.error || e.message || 'Ocurrió un error inesperado.');
+      Alert.alert('Error de Autenticación', msg);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const shakeAnimation = () => {
-    const shake = new Animated.Value(0);
-    Animated.sequence([
-      Animated.timing(shake, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: -10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 10, duration: 50, useNativeDriver: true }),
-      Animated.timing(shake, { toValue: 0, duration: 50, useNativeDriver: true }),
-    ]).start();
-    
-    return shake.interpolate({
-      inputRange: [-10, 0, 10],
-      outputRange: ['-10deg', '0deg', '10deg'],
-    });
-  };
-
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-      style={styles.keyboardContainer}
-    >
-      <Animated.View 
-        style={[
-          styles.authContainer,
-          { 
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }]
-          }
-        ]}
-      >
-        <Image 
-          source={require('./assets/Logo.png')} // Asegúrate de tener una imagen en esta ruta
-          style={styles.logo}
-        />
-        
-        <Text style={styles.title}>{isRegistering ? 'Crear Cuenta' : 'Bienvenido'}</Text>
-        <Text style={styles.subtitle}>
-          {isRegistering ? 'Regístrate para comenzar' : 'Inicia sesión para continuar'}
-        </Text>
-        
-        <View style={styles.inputContainer}>
-          <Ionicons name="mail-outline" size={20} color="#888" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Correo electrónico"
-            placeholderTextColor="#888"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-        </View>
-        
-        <View style={styles.inputContainer}>
-          <Ionicons name="lock-closed-outline" size={20} color="#888" style={styles.inputIcon} />
-          <TextInput
-            style={styles.input}
-            placeholder="Contraseña"
-            placeholderTextColor="#888"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.authButton}
-          onPress={handleAuth}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <Ionicons name="refresh-outline" size={24} color="white" style={styles.loadingIcon} />
-          ) : (
-            <Text style={styles.authButtonText}>
-              {isRegistering ? 'Registrarse' : 'Iniciar Sesión'}
-            </Text>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardContainer}>
+      <ScrollView contentContainerStyle={styles.authContainer}>
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          <Text style={styles.title}>{isRegistering ? 'Crear Cuenta' : 'Bienvenido'}</Text>
+          <Text style={styles.subtitle}>{isRegistering ? 'Ingresa tus datos para registrarte' : 'Inicia sesión para continuar'}</Text>
+
+          <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color="#888" />
+            <TextInput
+              style={styles.input}
+              placeholder="Correo electrónico"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color="#888" />
+            <TextInput
+              style={styles.input}
+              placeholder="Contraseña"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+          </View>
+
+          {isRegistering && (
+            <>
+              <View style={styles.inputContainer}>
+                <Ionicons name="person-outline" size={20} color="#888" />
+                <TextInput style={styles.input} placeholder="Nombre(s)" value={nombre} onChangeText={setNombre} />
+              </View>
+              <View style={styles.inputContainer}>
+                <Ionicons name="people-outline" size={20} color="#888" />
+                <TextInput style={styles.input} placeholder="Apellidos" value={apellidos} onChangeText={setApellidos} />
+              </View>
+              <View style={styles.inputContainer}>
+                <Ionicons name="call-outline" size={20} color="#888" />
+                <TextInput style={styles.input} placeholder="Teléfono" value={numTel} onChangeText={setNumTel} keyboardType="phone-pad" />
+              </View>
+              <View style={styles.inputContainer}>
+                <Ionicons name="calendar-outline" size={20} color="#888" />
+                <TextInput style={styles.input} placeholder="Fecha de Nacimiento (YYYY-MM-DD)" value={fechaNac} onChangeText={setFechaNac} />
+              </View>
+
+              <Text style={styles.section}>Datos de la Casa</Text>
+              <TextInput style={styles.inputField} placeholder="Nombre de la Casa" value={nombreCasa} onChangeText={setNombreCasa} />
+              <TextInput style={styles.inputField} placeholder="Dirección de la Casa" value={direccionCasa} onChangeText={setDireccionCasa} />
+              <TextInput style={styles.inputField} placeholder="Teléfono de la Casa" value={telefonoCasa} onChangeText={setTelefonoCasa} keyboardType="phone-pad" />
+              <TextInput style={styles.inputField} placeholder="Correo de la Casa" value={correoCasa} onChangeText={setCorreoCasa} keyboardType="email-address" />
+
+              <View style={styles.roleContainer}>
+                <Text style={styles.roleLabel}>Registrar como:</Text>
+                <View style={styles.roleOptions}>
+                  <TouchableOpacity onPress={() => setEsMadre(false)} style={[styles.roleBtn, !esMadre && styles.roleSelected]}>
+                    <Text style={!esMadre ? styles.roleTextSel : styles.roleText}>Padre</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setEsMadre(true)} style={[styles.roleBtn, esMadre && styles.roleSelected]}>
+                    <Text style={esMadre ? styles.roleTextSel : styles.roleText}>Madre</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>
           )}
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.switchButton}
-          onPress={() => setIsRegistering(!isRegistering)}
-        >
-          <Text style={styles.switchButtonText}>
-            {isRegistering ? 
-              '¿Ya tienes cuenta? Inicia Sesión' : 
-              '¿No tienes cuenta? Regístrate'}
-          </Text>
-        </TouchableOpacity>
-        
-        {!isRegistering && (
-          <TouchableOpacity style={styles.forgotButton}>
-            <Text style={styles.forgotButtonText}>¿Olvidaste tu contraseña?</Text>
+
+          <TouchableOpacity style={styles.authButton} onPress={handleAuth} disabled={isLoading}>
+            <Text style={styles.authButtonText}>{isLoading ? 'Cargando...' : (isRegistering ? 'Registrarse' : 'Iniciar Sesión')}</Text>
           </TouchableOpacity>
-        )}
-      </Animated.View>
+          <TouchableOpacity style={styles.switchButton} onPress={() => setIsRegistering(!isRegistering)} disabled={isLoading}>
+            <Text style={styles.switchButtonText}>{isRegistering ? '¿Ya tienes una cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate'}</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-function MainTabNavigator() {
+function ParentTabNavigator({ userId }) {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ color, size }) => {
-          let iconName;
-          switch (route.name) {
-            case 'Cuna': iconName = 'bed'; break;
-            case 'Gráficos': iconName = 'stats-chart'; break;
-            default: iconName = 'alert';
-          }
-          return <Ionicons name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: '#6a1b9a',
-        tabBarInactiveTintColor: 'gray',
-        tabBarStyle: {
-          backgroundColor: '#f8f9fa',
-          borderTopWidth: 0,
-          elevation: 10,
-          shadowOpacity: 0.1,
-          shadowRadius: 10,
-          height: 60,
-          paddingBottom: 5,
-        },
-      })}
-    >
-      <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Inicio' }} />
-      <Tab.Screen name="Gráficos" component={ChartScreen} />
-      <Tab.Screen name="cuna" component={CunaScreen} options={{ title: 'Cuna' }} />
+    <Tab.Navigator screenOptions={tabScreenOptions}>
+      <Tab.Screen
+        name="Home"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <HomeScreen {...props} userId={userId} />}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Alertas"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <ChartScreen {...props} userId={userId} />}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Cuna"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="bed-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <CunaScreen {...props} userId={userId} />}
+      </Tab.Screen>
+    
+      <Tab.Screen
+        name="Historial"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="document-text-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <HistoryScreen {...props} userId={userId} />}
+      </Tab.Screen>
+    </Tab.Navigator>
+  );
+}
+
+function NurseTabNavigator({ userId }) {
+  return (
+    <Tab.Navigator screenOptions={tabScreenOptions}>
+      <Tab.Screen
+        name="Inicio"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="home-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <HomeEnfermeroScreen {...props} userId={userId} />}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Cuna"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="bed-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <CunaEnfermeroScreen {...props} userId={userId} />}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Gráficos"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <ChartEnfermeroScreen {...props} userId={userId} />}
+      </Tab.Screen>
+      <Tab.Screen
+        name="Historial"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="document-text-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <HistoryEnfermeroScreen {...props} userId={userId} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
 
 export default function App() {
-  const [userData, setUserData] = useState(null);
+  // userSession ahora contendrá { firebaseUser, role, idUsuario }
+  const [userSession, setUserSession] = useState(null);
 
+  // Puedes comentar logoutUser() durante el desarrollo si te molesta
+  // que la sesión se cierre cada vez que reinicias la app.
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUserData(user);
-    });
-    return () => unsubscribe();
+    // logoutUser();
   }, []);
+
+  const handleLoginSuccess = async firebaseUser => {
+    try {
+      // 1. PRIMERA LLAMADA A LA API: Obtener el rol del usuario (espera una cadena como "Enfermero")
+      const role = await fetchUserRole(firebaseUser.email);
+      console.log('Rol obtenido de la API (a través de user.js):', role); // Para depuración
+
+      if (!role) {
+        Alert.alert('Error', 'No se encontró un rol para este usuario.');
+        await logoutUser();
+        return;
+      }
+
+      // 2. SEGUNDA LLAMADA A LA API: Obtener el idUsuario usando el nuevo endpoint
+      // Asegúrate de que esta URL sea correcta y que tu backend esté corriendo en esa IP y puerto
+      const userIdApiUrl = `http://172.18.2.158:3000/api/usuario-id-by-email?email=${encodeURIComponent(firebaseUser.email)}`;
+      const responseId = await fetch(userIdApiUrl);
+      
+      if (!responseId.ok) {
+        // Si hay un error HTTP, leemos el cuerpo de la respuesta para más detalles
+        const errorBody = await responseId.text();
+        throw new Error(`Error al obtener ID de usuario: ${responseId.status} - ${errorBody}`);
+      }
+      
+      const { idUsuario } = await responseId.json();
+      console.log('ID de usuario obtenido del nuevo endpoint de la API:', idUsuario); // Para depuración
+
+      if (idUsuario === undefined || idUsuario === null) {
+        Alert.alert('Error', 'No se pudo recuperar el ID de usuario de la base de datos.');
+        await logoutUser();
+        return;
+      }
+
+      // Almacenamos la sesión de usuario completa, incluyendo firebaseUser, role e idUsuario
+      setUserSession({ firebaseUser, role, idUsuario });
+      console.log('Sesión de usuario actualizada con rol e idUsuario:', { firebaseUser, role, idUsuario }); // Para depuración
+
+    } catch (error) {
+      console.error("Error en handleLoginSuccess:", error);
+      Alert.alert('Error de Inicio de Sesión', 'Ocurrió un problema durante el inicio de sesión. Por favor, intenta de nuevo. Detalle: ' + error.message);
+      await logoutUser();
+    }
+  };
 
   return (
     <NavigationContainer>
-      {userData ? (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Main" component={MainTabNavigator} />
-        </Stack.Navigator>
-      ) : (
-        <Stack.Navigator>
-          <Stack.Screen 
-            name="Auth" 
-            component={AuthScreen} 
-            options={{ headerShown: false }}
-          />
-        </Stack.Navigator>
-      )}
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {!userSession ? (
+          <Stack.Screen name="Auth">
+            {props => <AuthScreen {...props} onLoginSuccess={handleLoginSuccess} />}
+          </Stack.Screen>
+        ) : (
+          // Pasamos el idUsuario de userSession a los navegadores de pestañas
+          <Stack.Screen name="Main">
+            {props =>
+              userSession.role === 'Enfermero' ? (
+                <NurseTabNavigator userId={userSession.idUsuario} />
+              ) : (
+                <ParentTabNavigator userId={userSession.idUsuario} />
+              )
+            }
+          </Stack.Screen>
+        )}
+      </Stack.Navigator>
     </NavigationContainer>
   );
 }
 
+const tabScreenOptions = {
+  tabBarActiveTintColor: '#6a1b9a',
+  tabBarInactiveTintColor: 'gray',
+  tabBarStyle: { height: 60, paddingBottom: 5, backgroundColor: '#ffffff' },
+  headerShown: false,
+};
+
 const styles = StyleSheet.create({
   keyboardContainer: {
     flex: 1,
-  },
-  authContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 30,
     backgroundColor: '#fff',
   },
-  logo: {
-    width: 120,
-    height: 120,
-    alignSelf: 'center',
-    marginBottom: 30,
+  authContainer: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
-    marginBottom: 5,
-    color: '#6a1b9a',
+    color: '#333',
     textAlign: 'center',
+    marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
@@ -283,58 +375,95 @@ const styles = StyleSheet.create({
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#f7f7f7',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 25,
+    borderColor: '#eee',
+    borderRadius: 12,
     paddingHorizontal: 15,
     marginBottom: 15,
-    backgroundColor: '#f8f9fa',
-  },
-  inputIcon: {
-    marginRight: 10,
   },
   input: {
     flex: 1,
     height: 50,
+    marginLeft: 10,
     color: '#333',
+    fontSize: 16,
+  },
+  inputField: {
+    backgroundColor: '#f7f7f7',
+    borderWidth: 1,
+    borderColor: '#eee',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 50,
+    marginBottom: 15,
+    fontSize: 16,
+    color: '#333',
+  },
+  section: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  roleContainer: {
+    marginVertical: 15,
+  },
+  roleLabel: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 10,
+  },
+  roleOptions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  roleBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#6a1b9a',
+    borderRadius: 8,
+    alignItems: 'center',
+    marginHorizontal: 5,
+  },
+  roleSelected: {
+    backgroundColor: '#6a1b9a',
+  },
+  roleText: {
+    color: '#6a1b9a',
+    fontWeight: 'bold',
+  },
+  roleTextSel: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
   authButton: {
     backgroundColor: '#6a1b9a',
-    borderRadius: 25,
+    borderRadius: 12,
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
-    shadowColor: '#6a1b9a',
+    marginTop: 20,
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
     elevation: 5,
   },
   authButtonText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
   },
-  loadingIcon: {
-    transform: [{ rotate: '360deg' }],
-  },
   switchButton: {
-    marginTop: 20,
-    padding: 10,
+    marginTop: 25,
     alignItems: 'center',
   },
   switchButtonText: {
     color: '#6a1b9a',
-    fontSize: 14,
-  },
-  forgotButton: {
-    marginTop: 15,
-    alignItems: 'center',
-  },
-  forgotButtonText: {
-    color: '#666',
-    fontSize: 14,
-    textDecorationLine: 'underline',
-  },
+    fontSize: 15,
+    fontWeight: '600',
+  }
 });

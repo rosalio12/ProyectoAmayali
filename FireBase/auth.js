@@ -3,7 +3,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   sendEmailVerification // 1. Importar la función para enviar el correo
-} from 'firebase/auth';
+} from 'firebase/auth'; // Asegúrate de que la ruta sea correcta
 import { auth } from './firebaseConfig';
 
 // Registrar usuario y enviar email de verificación
@@ -48,3 +48,6 @@ export const loginUser = async (email, password) => {
 export const logoutUser = async () => {
   await signOut(auth);
 };
+
+export { onAuthStateChanged } from 'firebase/auth';
+

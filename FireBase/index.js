@@ -1,3 +1,4 @@
+// /FireBase/index.js
 import { auth, db } from './firebaseConfig';
 import * as authFunctions from './auth';
 import * as firestoreFunctions from './firestore';

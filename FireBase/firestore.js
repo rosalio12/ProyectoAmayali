@@ -6,7 +6,8 @@ import {
   updateDoc,
   deleteDoc 
 } from 'firebase/firestore';
-import { db } from './firebaseConfig';
+import { db } from './firebaseConfig'; // ✅ SDK oficial
+ // Asegúrate de que la ruta sea correcta
 
 // Crear documento
 export const createDocument = async (collectionName, data) => {

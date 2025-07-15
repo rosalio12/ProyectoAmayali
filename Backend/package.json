@@ -1,7 +1,7 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "api.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -10,11 +10,9 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "axios": "^1.10.0",
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "mangosta": "^1.0.1",
-    "mongodb": "^6.17.0",
-    "mongoose": "^8.16.0"
+    "mqtt": "^5.13.1",
+    "mssql": "^11.0.1"
   }
 }
