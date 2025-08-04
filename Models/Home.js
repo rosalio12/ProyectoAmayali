@@ -16,8 +16,9 @@ export default function HomeScreen() {
     });
 
     const [historicalData, setHistoricalData] = useState([]);
-    const [serverIP] = useState('http://172.18.2.158:5000/sensor-data');
+    const [serverIP] = useState('http://localhost:5000/sensor-data');
     const [permission, requestPermission] = useCameraPermissions();
+      const [selectedBaby, setSelectedBaby] = useState(null);
     const [showScanner, setShowScanner] = useState(false);
     const [scanned, setScanned] = useState(false);
     
@@ -113,12 +114,16 @@ export default function HomeScreen() {
     }
 
     return (
-        <View style={{ flex: 1 }}>
-            <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 80 }}>
-                <View style={styles.header}>
-                    <Text style={styles.headerTitle}>Monitor de Bebé</Text>
-                    <Text style={styles.babyName}>{babyData.name} • {babyData.age}</Text>
-                </View>
+      <View style={{ flex: 1 }}>
+            <ScrollView style={styles.container}>
+              <View style={styles.header}>
+                <Text style={styles.headerTitle}>Monitor de Bebés Asignados</Text>
+                {selectedBaby ? (
+                  <Text style={styles.babyName}>{selectedBaby.Nombre} {selectedBaby.Apellidos || ''}</Text>
+                ) : (
+                  <Text style={styles.babyName}>Ningún bebé seleccionado</Text>
+                )}
+              </View>
 
                 <MedicalDataCard />
 

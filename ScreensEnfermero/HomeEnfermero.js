@@ -1,127 +1,113 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Button, ActivityIndicator, Alert, FlatList } from 'react-native';
+import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Button, ActivityIndicator, Alert, FlatList, Modal, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 // IPs y Puertos de tus backends
-const SQL_API_BASE = 'http://172.18.2.158:3000'; // Tu API de SQL Server
-const MONGO_API_BASE = 'http://172.18.2.158:5000'; // Tu API de MongoDB (corregido el error tipográfico en 'http')
+const SQL_API_BASE = 'http://localhost:3000'; // Tu API de SQL Server
+const MONGO_API_BASE = 'http://localhost:5000'; // Tu API de MongoDB
+const ALIMENTACION_API_BASE = 'http://localhost:5000'; // API para alimentación
 
-export default function HomeEnfermeroScreen({ userId }) { // Recibe userId del enfermero
-  const [assignedBabies, setAssignedBabies] = useState([]); // Almacenará la lista de bebés asignados
-  const [selectedBaby, setSelectedBaby] = useState(null); // Almacenará el bebé actualmente seleccionado
-  const [sensorData, setSensorData] = useState({}); // Almacenará los datos del sensor del bebé seleccionado
+export default function HomeEnfermeroScreen({ userId }) {
+  const [assignedBabies, setAssignedBabies] = useState([]);
+  const [selectedBaby, setSelectedBaby] = useState(null);
+  const [sensorData, setSensorData] = useState({});
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const [modalVisible, setModalVisible] = useState(false);
+  const [nuevoBebe, setNuevoBebe] = useState({
+    nombre: '',
+    apellidoPaterno: '',
+    apellidoMaterno: '',
+    sexo: '',
+    peso: '',
+    fechaNacimiento: '',
+    alergias: ''
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
-  // Función para obtener alertas basadas en los datos del sensor
   const getAlerts = useCallback((data) => {
     const alerts = [];
-
     if (data.oxigenacion && data.oxigenacion < 90) {
-      alerts.push({
-        type: 'oxigenacion',
-        message: `Oxigenación baja (${data.oxigenacion}%)`,
-        level: 'danger'
-      });
+      alerts.push({ type: 'oxigenacion', message: `Oxigenación baja (${data.oxigenacion}%)`, level: 'danger' });
     }
-
     if (data.frecuenciaCardiaca) {
       if (data.frecuenciaCardiaca > 160 || data.frecuenciaCardiaca < 100) {
-        alerts.push({
-          type: 'corazon',
-          message: `Ritmo cardíaco anormal (${Math.round(data.frecuenciaCardiaca)} lpm)`,
-          level: 'warning'
-        });
+        alerts.push({ type: 'corazon', message: `Ritmo cardíaco anormal (${Math.round(data.frecuenciaCardiaca)} lpm)`, level: 'warning' });
       }
     }
-
     if (alerts.length === 0) {
-      alerts.push({
-        type: 'ok',
-        message: 'Signos vitales normales',
-        level: 'success'
-      });
+      alerts.push({ type: 'ok', message: 'Signos vitales normales', level: 'success' });
     }
     return alerts;
   }, []);
 
-  // Función principal para obtener todos los datos de los bebés del enfermero
+  const fetchUltimosRegistros = async (idBebe) => {
+    try {
+      const res = await fetch(`${ALIMENTACION_API_BASE}/registro-alimentacion/ultimo/${idBebe}`);
+      if (!res.ok) return { ultimaComida: null, ultimoMedicamento: null };
+      const data = await res.json();
+      return { ultimaComida: data?.ultimaComida || null, ultimoMedicamento: data?.ultimoMedicamento || null };
+    } catch {
+      return { ultimaComida: null, ultimoMedicamento: null };
+    }
+  };
+
   const fetchData = useCallback(async () => {
     if (!userId) {
-      console.log('HomeEnfermeroScreen: userId no está disponible aún.');
       setLoading(false);
       return;
     }
-
     setLoading(true);
     try {
-      // 1. Obtener los bebés ASIGNADOS a este enfermero desde SQL
-      console.log(`HomeEnfermeroScreen: Fetching babies for nurse userId: ${userId} from SQL`);
-      const babiesRes = await fetch(`${SQL_API_BASE}/api/bebes/enfermero/${userId}`); // ¡Endpoint para enfermeros!
-
+      const babiesRes = await fetch(`${SQL_API_BASE}/api/bebes/enfermero/${userId}`);
       if (!babiesRes.ok) {
-        const errorText = await babiesRes.text();
-        throw new Error(`Error ${babiesRes.status}: ${errorText} al obtener bebés para el enfermero.`);
+        throw new Error(`Error ${babiesRes.status} al obtener bebés.`);
       }
       const babies = await babiesRes.json();
-      console.log('HomeEnfermeroScreen: Babies obtained from SQL:', babies);
-
       if (babies.length === 0) {
-        Alert.alert("Sin Bebés Asignados", "No tienes bebés registrados o asignados a tu cuenta de enfermero.");
         setAssignedBabies([]);
         setSelectedBaby(null);
         setSensorData({});
         setLoading(false);
         return;
       }
-
-      setAssignedBabies(babies);
-
-      // Si no hay un bebé seleccionado o el bebé seleccionado ya no está en la lista, selecciona el primero
-      if (!selectedBaby || !babies.some(baby => baby.idBebe === selectedBaby.idBebe)) {
-        setSelectedBaby(babies[0]);
+      const babiesWithRegistros = await Promise.all(
+        babies.map(async (baby) => {
+          const { ultimaComida, ultimoMedicamento } = await fetchUltimosRegistros(baby.idBebe);
+          return { ...baby, ultimaComida, ultimoMedicamento };
+        })
+      );
+      setAssignedBabies(babiesWithRegistros);
+      // Actualiza el bebé seleccionado si el actual ya no está en la lista o no hay ninguno
+      const currentSelectedBabyStillExists = babiesWithRegistros.some(b => b.idBebe === selectedBaby?.idBebe);
+      if (!currentSelectedBabyStillExists) {
+        setSelectedBaby(babiesWithRegistros[0]);
       }
 
     } catch (error) {
-      console.error('Error fetching babies for nurse home screen:', error);
-      Alert.alert("Error de Conexión", `No se pudieron cargar la lista de bebés. ${error.message}`);
-      setAssignedBabies([]);
-      setSelectedBaby(null);
-      setSensorData({});
+      console.error('Error fetching babies:', error);
+      Alert.alert("Error de Conexión", `No se pudieron cargar los bebés. ${error.message}`);
     } finally {
       setLoading(false);
     }
-  }, [userId, selectedBaby]); // Dependencias: userId y selectedBaby para reaccionar a cambios en la selección
+  }, [userId]);
 
-  // Efecto para obtener los datos del sensor del bebé seleccionado
   useEffect(() => {
     const fetchSensorData = async () => {
       if (!selectedBaby || !selectedBaby.idCuna) {
-        setSensorData({
-          heartRate: '--', oxygen: '--', temperature: '--°C',
-          alerts: [{ type: 'info', message: 'Selecciona un bebé con cuna asignada para ver sus datos.', level: 'info' }],
-          lastUpdate: '--'
-        });
+        setSensorData({ heartRate: '--', oxygen: '--', temperature: '--°C', alerts: [{ type: 'info', message: 'Selecciona un bebé con cuna para ver datos.', level: 'info' }], lastUpdate: '--' });
         return;
       }
-
       try {
         const cunaMongoId = `CUNA${String(selectedBaby.idCuna).padStart(3, '0')}`;
-        console.log(`HomeEnfermeroScreen: Fetching sensor data for cunaId: ${cunaMongoId} from MongoDB`);
-
         const sensorDataRes = await fetch(`${MONGO_API_BASE}/sensor-data?cunas=${cunaMongoId}&limit=1`);
-        if (!sensorDataRes.ok) {
-          const errorText = await sensorDataRes.text();
-          throw new Error(`Error ${sensorDataRes.status}: ${errorText} al obtener datos de sensor de Mongo.`);
-        }
+        if (!sensorDataRes.ok) throw new Error(`Error ${sensorDataRes.status} al obtener datos del sensor.`);
         const jsonSensor = await sensorDataRes.json();
-        console.log('HomeEnfermeroScreen: Sensor data from Mongo:', jsonSensor);
-
-        const latestSensorReading = jsonSensor.data && jsonSensor.data.length > 0 ? jsonSensor.data[0] : null;
-
+        const latestSensorReading = jsonSensor.data?.[0];
         if (latestSensorReading) {
           setSensorData({
             heartRate: latestSensorReading.frecuenciaCardiaca ? `${Math.round(latestSensorReading.frecuenciaCardiaca)}` : '--',
@@ -131,113 +117,151 @@ export default function HomeEnfermeroScreen({ userId }) { // Recibe userId del e
             lastUpdate: new Date(latestSensorReading.timestamp).toLocaleTimeString()
           });
         } else {
-          setSensorData({
-            heartRate: '--', oxygen: '--', temperature: '--°C',
-            alerts: [{ type: 'info', message: 'No hay datos de sensor recientes para esta cuna.', level: 'info' }],
-            lastUpdate: '--'
-          });
+          setSensorData({ heartRate: '--', oxygen: '--', temperature: '--°C', alerts: [{ type: 'info', message: 'No hay datos recientes.', level: 'info' }], lastUpdate: '--' });
         }
       } catch (error) {
         console.error('Error fetching sensor data:', error);
-        Alert.alert("Error de Conexión", `No se pudieron cargar los datos del sensor. ${error.message}`);
-        setSensorData({});
+        setSensorData({ heartRate: '--', oxygen: '--', temperature: '--°C', alerts: [{ type: 'error', message: 'Error al cargar datos.', level: 'danger' }], lastUpdate: '--' });
       }
     };
-
     fetchSensorData();
-    const interval = setInterval(fetchSensorData, 6000); // Actualizar cada 6 segundos
+    const interval = setInterval(fetchSensorData, 6000);
     return () => clearInterval(interval);
-  }, [selectedBaby, getAlerts]); // Dependencias: selectedBaby y getAlerts
+  }, [selectedBaby, getAlerts]);
 
-  // Efecto para cargar la lista de bebés al inicio
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-
+  // --- FUNCIÓN ACTUALIZADA PARA ASIGNAR CUNA ---
   const handleBarCodeScanned = async ({ type, data }) => {
     setScanned(true);
-    setShowScanner(false); // Cierra el escáner inmediatamente
+    setShowScanner(false);
 
     if (!selectedBaby || !selectedBaby.idBebe) {
-      Alert.alert("Error", "No se pudo asignar la cuna. Por favor, selecciona un bebé primero.");
-      setScanned(false);
+      Alert.alert("Error", "Por favor, selecciona un bebé antes de escanear una cuna.");
+      setTimeout(() => setScanned(false), 1000);
       return;
     }
 
-    Alert.alert(
-      `QR Escaneado`,
-      `Cuna ID detectada: ${data}. ¿Deseas asignar esta cuna al bebé ${selectedBaby.Nombre}?`,
-      [
-        { text: "Cancelar", style: "cancel", onPress: () => setScanned(false) },
-        {
-          text: "Asignar", onPress: async () => {
-            try {
-              const cunaIdFromQR = parseInt(data, 10);
-              if (isNaN(cunaIdFromQR)) {
-                Alert.alert("Error", "El ID de cuna escaneado no es un número válido.");
-                setScanned(false);
-                return;
-              }
+    try {
+      // Extracción robusta del idCuna desde el QR
+      let cunaId;
+      // Si el QR es solo un número
+      if (/^\d+$/.test(data)) {
+        cunaId = parseInt(data, 10);
+      } else {
+        // Si el QR es una URL tipo .../cuna/35
+        const match = data.match(/(\d+)$/);
+        cunaId = match ? parseInt(match[1], 10) : null;
+      }
 
-              // Endpoint de SQL para actualizar la cuna de un bebé
-              const assignCunaRes = await fetch(`${SQL_API_BASE}/api/bebe/asignar-cuna`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ idBebe: selectedBaby.idBebe, idCuna: cunaIdFromQR })
-              });
+      if (!cunaId || isNaN(cunaId)) {
+        throw new Error("El código QR no contiene un ID de cuna válido.");
+      }
 
-              if (!assignCunaRes.ok) {
-                const errorText = await assignCunaRes.text();
-                throw new Error(`Error ${assignCunaRes.status}: ${errorText}`);
+      Alert.alert(
+        "Confirmar Asignación",
+        `¿Asignar la Cuna #${cunaId} al bebé ${selectedBaby.Nombre} ${selectedBaby.ApellidoPaterno}?`,
+        [
+          { text: "Cancelar", style: "cancel", onPress: () => setTimeout(() => setScanned(false), 500) },
+          {
+            text: "Asignar",
+            onPress: async () => {
+              try {
+                const apiEndpoint = `${SQL_API_BASE}/api/bebe/asignar-cuna`;
+                const response = await fetch(apiEndpoint, {
+                  method: 'PUT',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    idBebe: selectedBaby.idBebe,
+                    idCuna: cunaId,
+                    idUsuario: userId
+                  })
+                });
+                const responseJson = await response.json();
+
+                if (!response.ok) {
+                  throw new Error(responseJson.message || `Error del servidor: ${response.status}`);
+                }
+
+                Alert.alert("Éxito", responseJson.message);
+                fetchData();
+              } catch (assignError) {
+                Alert.alert("Error de Asignación", assignError.message);
+              } finally {
+                setTimeout(() => setScanned(false), 1000);
               }
-              Alert.alert("Éxito", `Cuna asignada correctamente a ${selectedBaby.Nombre}.`);
-              // Recargar los datos después de la asignación
-              fetchData();
-            } catch (error) {
-              console.error("Error asignando cuna:", error);
-              Alert.alert("Error", `Fallo al asignar la cuna: ${error.message}`);
-            } finally {
-              setScanned(false);
             }
-          }
-        },
-      ]
-    );
+          },
+        ]
+      );
+    } catch (error) {
+      Alert.alert("Error", `No se pudo procesar el código QR: ${error.message}`);
+      setTimeout(() => setScanned(false), 1000);
+    }
+  };
+
+  const handleAgregarBebe = async () => {
+    console.log('[UI] Abriendo modal para agregar bebé');
+    setModalVisible(true);
+  };
+
+  const handleGuardarBebe = async () => {
+    try {
+      console.log('[UI] Enviando datos del nuevo bebé:', nuevoBebe);
+      const resp = await fetch(`${SQL_API_BASE}/api/bebes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...nuevoBebe
+        })
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(`Error ${resp.status}: ${txt}`);
+      }
+      const data = await resp.json();
+      setModalVisible(false);
+      setNuevoBebe({
+        nombre: '',
+        apellidoPaterno: '',
+        apellidoMaterno: '',
+        sexo: '',
+        peso: '',
+        fechaNacimiento: '',
+        alergias: ''
+      });
+      // Recargar la lista de bebés
+      fetchData();
+      // Mostrar la cuna asignada si viene en la respuesta
+      let cunaMsg = '';
+      if (data && data.idCuna) {
+        cunaMsg = `\nAsignado a la cuna #${data.idCuna}.`;
+      }
+      Alert.alert('Éxito', `Bebé creado y cuna asignada automáticamente.${cunaMsg}`);
+    } catch (err) {
+      console.error('[UI] Error al crear bebé:', err);
+      Alert.alert('Error', err.message);
+    }
   };
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#7E57C2" />
-        <Text style={styles.loadingText}>Cargando bebés asignados...</Text>
-      </View>
-    );
+    return <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#7E57C2" /><Text style={styles.loadingText}>Cargando...</Text></View>;
   }
 
-  // Permisos de la cámara
   if (showScanner && permission && !permission.granted) {
-    return (
-      <View style={styles.permissionContainer}>
-        <Text style={styles.message}>Se necesita permiso para usar la cámara</Text>
-        <Button onPress={requestPermission} title="Conceder permiso" color="#7E57C2" />
-      </View>
-    );
+    return <View style={styles.permissionContainer}><Text style={styles.message}>Se necesita permiso para usar la cámara</Text><Button onPress={requestPermission} title="Conceder permiso" /></View>;
   }
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Monitor de Bebés Asignados</Text>
-          {selectedBaby ? (
-            <Text style={styles.babyName}>{selectedBaby.Nombre} {selectedBaby.Apellidos || ''}</Text>
-          ) : (
-            <Text style={styles.babyName}>Ningún bebé seleccionado</Text>
-          )}
+          <Text style={styles.headerTitle}>Monitor de Bebés</Text>
+          <Text style={styles.babyName}>{selectedBaby ? `${selectedBaby.Nombre} ${selectedBaby.ApellidoPaterno || ''}` : 'Ningún bebé seleccionado'}</Text>
         </View>
 
-        {/* Lista horizontal de bebés */}
         <View style={styles.babiesListContainer}>
           <Text style={styles.listTitle}>Tus Bebés Asignados:</Text>
           {assignedBabies.length > 0 ? (
@@ -245,55 +269,49 @@ export default function HomeEnfermeroScreen({ userId }) { // Recibe userId del e
               horizontal
               data={assignedBabies}
               keyExtractor={(item) => item.idBebe.toString()}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.babyListItem,
-                    selectedBaby && selectedBaby.idBebe === item.idBebe && styles.selectedBabyListItem
-                  ]}
-                  onPress={() => setSelectedBaby(item)}
-                >
-                  <Text style={[styles.babyListItemText, selectedBaby && selectedBaby.idBebe === item.idBebe && styles.selectedBabyListItemText]}>
-                    {item.Nombre}
-                  </Text>
-                </TouchableOpacity>
-              )}
+              renderItem={({ item }) => {
+                const isSelected = selectedBaby?.idBebe === item.idBebe;
+                return (
+                  <TouchableOpacity style={[styles.babyListItem, isSelected && styles.selectedBabyListItem]} onPress={() => setSelectedBaby(item)}>
+                    <Text style={[styles.babyListItemText, isSelected && styles.selectedBabyListItemText]}>{item.Nombre} {item.ApellidoPaterno || ''}</Text>
+                    <Text style={[styles.babyListItemSubText, isSelected && styles.selectedBabyListItemSubText]}>{item.idCuna ? `Cuna: #${item.idCuna}` : 'Sin Cuna'}</Text>
+                  </TouchableOpacity>
+                );
+              }}
               showsHorizontalScrollIndicator={false}
             />
-          ) : (
-            <Text style={styles.noBabyMessage}>No se encontraron bebés asignados a tu cuenta.</Text>
-          )}
+          ) : <Text style={styles.noBabyMessage}>No tienes bebés asignados.</Text>}
         </View>
-        <View style={styles.divider} /> {/* Línea divisoria */}
-
+        <View style={styles.divider} />
 
         {selectedBaby ? (
           <>
-            <MedicalDataCard
-              heartRate={sensorData.heartRate}
-              oxygen={sensorData.oxygen}
-              temperature={sensorData.temperature}
-              lastUpdate={sensorData.lastUpdate}
-            />
-
+            <MedicalDataCard {...sensorData} />
+            <View style={styles.cuidadosCard}>
+              <Text style={styles.cuidadosTitle}>Cuidados Recientes</Text>
+              <Text style={styles.cuidadosLabel}>Última comida: <Text style={styles.cuidadosBold}>{selectedBaby.ultimaComida ? new Date(selectedBaby.ultimaComida).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}</Text></Text>
+              <Text style={styles.cuidadosLabel}>Último med.: <Text style={styles.cuidadosBold}>{selectedBaby.ultimoMedicamento ? new Date(selectedBaby.ultimoMedicamento).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}</Text></Text>
+            </View>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Estado del Sistema</Text>
-              {sensorData.alerts && sensorData.alerts.map((alert, index) => (
-                <AlertItem key={index} {...alert} />
-              ))}
+              {sensorData.alerts?.map((alert, index) => <AlertItem key={index} {...alert} />)}
             </View>
           </>
-        ) : (
-          <View style={styles.infoCard}>
-            <Ionicons name="information-circle-outline" size={50} color="#7E57C2" />
-            <Text style={styles.infoCardText}>Selecciona un bebé de la lista superior para ver sus signos vitales.</Text>
-          </View>
-        )}
+        ) : <View style={styles.infoCard}><Ionicons name="information-circle-outline" size={50} color="#7E57C2" /><Text style={styles.infoCardText}>Selecciona un bebé para ver sus datos.</Text></View>}
       </ScrollView>
 
-      <TouchableOpacity style={styles.addButton} onPress={() => setShowScanner(true)}>
-        <Ionicons name="qr-code-outline" size={30} color="white" />
-        <Text style={styles.addButtonText}>Asignar Cuna</Text>
+      {/* Botón flotante Agregar Bebé (izquierda) */}
+      <TouchableOpacity style={styles.fabLeft} onPress={handleAgregarBebe}>
+        <View style={styles.fabButton}>
+          <Text style={{ fontSize: 28, color: 'white', marginRight: 2 }}>👶</Text>
+          <Ionicons name="add" size={20} color="white" style={{ marginLeft: -6, marginTop: -8 }} />
+        </View>
+      </TouchableOpacity>
+      {/* Botón flotante QR (derecha) */}
+      <TouchableOpacity style={styles.fabRight} onPress={() => setShowScanner(true)}>
+        <View style={styles.fabButton}>
+          <Ionicons name="qr-code-outline" size={30} color="white" />
+        </View>
       </TouchableOpacity>
 
       {showScanner && permission?.granted && (
@@ -315,71 +333,79 @@ export default function HomeEnfermeroScreen({ userId }) { // Recibe userId del e
           </CameraView>
         </View>
       )}
+
+      <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={() => setModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalForm}>
+            <Text style={styles.modalTitle}>Nuevo Bebé</Text>
+            <View style={styles.formGroup}>
+              <TextInput placeholder="Nombre" value={nuevoBebe.nombre} onChangeText={t => setNuevoBebe(prev => ({ ...prev, nombre: t }))} style={styles.input} />
+              <TextInput placeholder="Apellido Paterno" value={nuevoBebe.apellidoPaterno} onChangeText={t => setNuevoBebe(prev => ({ ...prev, apellidoPaterno: t }))} style={styles.input} />
+              <TextInput placeholder="Apellido Materno" value={nuevoBebe.apellidoMaterno} onChangeText={t => setNuevoBebe(prev => ({ ...prev, apellidoMaterno: t }))} style={styles.input} />
+              <TextInput placeholder="Sexo" value={nuevoBebe.sexo} onChangeText={t => setNuevoBebe(prev => ({ ...prev, sexo: t }))} style={styles.input} />
+              <TextInput placeholder="Peso (kg)" value={nuevoBebe.peso} onChangeText={t => setNuevoBebe(prev => ({ ...prev, peso: t }))} keyboardType="numeric" style={styles.input} />
+              
+              {/* Selector de fecha tipo calendario */}
+              <TouchableOpacity
+                style={[styles.input, { justifyContent: 'center', height: 48 }]}
+                onPress={() => setShowDatePicker(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={{ color: nuevoBebe.fechaNacimiento ? '#333' : '#888', fontSize: 16 }}>
+                  {nuevoBebe.fechaNacimiento
+                    ? new Date(nuevoBebe.fechaNacimiento).toLocaleDateString()
+                    : 'Fecha de Nacimiento'}
+                </Text>
+              </TouchableOpacity>
+              {showDatePicker && (
+                <DateTimePicker
+                  value={nuevoBebe.fechaNacimiento ? new Date(nuevoBebe.fechaNacimiento) : new Date()}
+                  mode="date"
+                  display="default"
+                  maximumDate={new Date()}
+                  onChange={(_, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) {
+                      setNuevoBebe(prev => ({
+                        ...prev,
+                        fechaNacimiento: selectedDate.toISOString().split('T')[0]
+                      }));
+                    }
+                  }}
+                />
+              )}
+
+              <TextInput placeholder="Alergias" value={nuevoBebe.alergias} onChangeText={t => setNuevoBebe(prev => ({ ...prev, alergias: t }))} style={styles.input} />
+            </View>
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={() => setModalVisible(false)}>
+                <Text style={styles.modalButtonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modalButton, styles.saveButton]} onPress={handleGuardarBebe}>
+                <Text style={styles.modalButtonText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-// Componentes funcionales fuera del componente principal (sin cambios)
+// --- Componentes de UI (sin cambios) ---
 const VitalSign = ({ icon, value, unit, label }) => (
-  <View style={styles.vitalSign}>
-    <View style={styles.vitalSignHeader}>
-      <Ionicons name={icon} size={24} color="#7E57C2" />
-      <Text style={styles.vitalSignLabel}>{label}</Text>
-    </View>
-    <Text style={styles.vitalSignValue}>
-      {value} <Text style={styles.vitalSignUnit}>{unit}</Text>
-    </Text>
-  </View>
+  <View style={styles.vitalSign}><View style={styles.vitalSignHeader}><Ionicons name={icon} size={24} color="#7E57C2" /><Text style={styles.vitalSignLabel}>{label}</Text></View><Text style={styles.vitalSignValue}>{value} <Text style={styles.vitalSignUnit}>{unit}</Text></Text></View>
 );
-
 const MedicalDataCard = ({ heartRate, oxygen, temperature, lastUpdate }) => (
-  <View style={styles.card}>
-    <Text style={styles.cardTitle}>Monitor de Signos Vitales</Text>
-
-    <View style={styles.vitalSignsContainer}>
-      <VitalSign icon="heart" value={heartRate} unit="lpm" label="Ritmo Cardíaco" />
-      <VitalSign icon="pulse" value={oxygen} unit="%" label="Oxígeno" />
-    </View>
-    <View style={styles.temperatureContainer}>
-      <Ionicons name="thermometer" size={24} color="#7E57C2" />
-      <Text style={styles.temperatureLabel}>Temperatura:</Text>
-      <Text style={styles.temperatureValue}>{temperature}</Text>
-    </View>
-
-    <Text style={styles.lastUpdate}>
-      Última actualización: {lastUpdate || new Date().toLocaleTimeString()}
-    </Text>
-  </View>
+  <View style={styles.card}><Text style={styles.cardTitle}>Monitor de Signos Vitales</Text><View style={styles.vitalSignsContainer}><VitalSign icon="heart" value={heartRate} unit="lpm" label="Ritmo Cardíaco" /><VitalSign icon="pulse" value={oxygen} unit="%" label="Oxígeno" /></View><View style={styles.temperatureContainer}><Ionicons name="thermometer" size={24} color="#7E57C2" /><Text style={styles.temperatureLabel}>Temperatura:</Text><Text style={styles.temperatureValue}>{temperature}</Text></View><Text style={styles.lastUpdate}>Última actualización: {lastUpdate || new Date().toLocaleTimeString()}</Text></View>
 );
-
 const AlertItem = ({ type, message, level }) => {
-  const getIconName = () => {
-    switch (type) {
-      case 'oxigenacion': return 'warning';
-      case 'corazon': return 'heart';
-      case 'error': return 'alert-circle';
-      case 'info': return 'information-circle';
-      default: return 'checkmark-circle';
-    }
-  };
-
-  const getColor = () => {
-    switch (level) {
-      case 'danger': return '#FF5252';
-      case 'warning': return '#FFC107';
-      case 'info': return '#2196F3';
-      default: return '#4CAF50';
-    }
-  };
-
-  return (
-    <View style={[styles.alertItem, { backgroundColor: `${getColor()}20` }]}>
-      <Ionicons name={getIconName()} size={20} color={getColor()} />
-      <Text style={[styles.alertText, { color: getColor() }]}>{message}</Text>
-    </View>
-  );
+  const getIconName = () => ({ oxigenacion: 'warning', corazon: 'heart', error: 'alert-circle', info: 'information-circle' }[type] || 'checkmark-circle');
+  const getColor = () => ({ danger: '#FF5252', warning: '#FFC107', info: '#2196F3' }[level] || '#4CAF50');
+  return <View style={[styles.alertItem, { backgroundColor: `${getColor()}20` }]}><Ionicons name={getIconName()} size={20} color={getColor()} /><Text style={[styles.alertText, { color: getColor() }]}>{message}</Text></View>;
 };
 
+// --- Estilos (sin cambios) ---
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5', padding: 16 },
   header: { marginBottom: 20, padding: 20, backgroundColor: '#7E57C2', borderRadius: 12 },
@@ -408,11 +434,59 @@ const styles = StyleSheet.create({
   alertItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 8 },
   alertText: { marginLeft: 10, fontSize: 14, fontWeight: '500' },
   addButton: {
-    position: 'absolute', right: 20, bottom: 20,
-    backgroundColor: '#7E57C2', width: 60, height: 60,
-    borderRadius: 30, justifyContent: 'center', alignItems: 'center', elevation: 5
+    backgroundColor: '#7E57C2',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    marginBottom: 10,
   },
-  addButtonText: { color: 'white', fontSize: 10, marginTop: 2, fontWeight: 'bold' },
+  addBabyButton: {
+    backgroundColor: '#4A2C8E',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    flexDirection: 'row',
+  },
+  fabContainer: {
+    position: 'absolute',
+    left: 20, // Cambiado de right a left
+    bottom: 20,
+    flexDirection: 'column',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  fabLeft: {
+    position: 'absolute',
+    left: 20,
+    bottom: 30,
+    zIndex: 10,
+  },
+  fabRight: {
+    position: 'absolute',
+    right: 20,
+    bottom: 30,
+    zIndex: 10,
+  },
+  fabButton: {
+    backgroundColor: '#7E57C2',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    elevation: 6,
+    shadowColor: '#7E57C2',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+  },
   overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)' },
   backButton: {
     position: 'absolute', top: 50, left: 20,
@@ -444,11 +518,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 16,
     color: '#666',
-    marginTop: 30,
+    marginTop: 20,
     paddingHorizontal: 20,
     lineHeight: 24,
   },
-  // Estilos para la lista de bebés
   babiesListContainer: {
     marginBottom: 20,
   },
@@ -459,24 +532,38 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   babyListItem: {
-    backgroundColor: '#E0E0E0',
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 20,
+    backgroundColor: 'white',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
     marginRight: 10,
     borderWidth: 1,
-    borderColor: '#CCC',
+    borderColor: '#E0E0E0',
+    justifyContent: 'center',
+    minHeight: 60,
+    minWidth: 120,
   },
   selectedBabyListItem: {
     backgroundColor: '#7E57C2',
     borderColor: '#4A2C8E',
   },
   babyListItemText: {
-    color: '#4A4A4A',
-    fontWeight: '500',
+    color: '#333',
+    fontWeight: 'bold',
+    fontSize: 14,
+    textAlign: 'center',
   },
   selectedBabyListItemText: {
     color: 'white',
+  },
+  babyListItemSubText: {
+    color: '#666',
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  selectedBabyListItemSubText: {
+    color: '#EADDFF',
   },
   divider: {
     height: 1,
@@ -498,5 +585,90 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
-  }
+  },
+  cuidadosCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 2,
+  },
+  cuidadosTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4A2C8E',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  cuidadosLabel: {
+    marginLeft: 8,
+    fontSize: 15,
+    color: '#333',
+    marginBottom: 8,
+  },
+  cuidadosBold: {
+    fontWeight: 'bold',
+    color: '#4A2C8E',
+  },
+  // --- Modal Mejorado ---
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  modalForm: {
+    backgroundColor: '#fff',
+    padding: 28,
+    borderRadius: 20,
+    width: '92%',
+    elevation: 8,
+    shadowColor: '#7E57C2',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+  },
+  modalTitle: {
+    fontWeight: 'bold',
+    fontSize: 22,
+    marginBottom: 18,
+    color: '#4A2C8E',
+    textAlign: 'center',
+  },
+  formGroup: {
+    marginBottom: 18,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+    fontSize: 16,
+    backgroundColor: '#F9F5FF',
+    color: '#333',
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 10,
+    gap: 10,
+  },
+  modalButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#888',
+  },
+  saveButton: {
+    backgroundColor: '#4A2C8E',
+  },
+  modalButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 });

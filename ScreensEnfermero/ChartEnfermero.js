@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react"
 import {
   View,
   StyleSheet,
@@ -6,286 +6,592 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert // Importamos Alert para mejor manejo de errores
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+  Alert,
+  StatusBar,
+  RefreshControl,
+  Modal,
+  TextInput,
+} from "react-native"
 
-// ✅ Recibe userId como prop
 export default function ChartEnfermeroScreen({ userId }) {
-  const [alertas, setAlertas] = useState(null);
-  const [filtroTipo, setFiltroTipo] = useState('Todos');
-  const [filtroNivel, setFiltroNivel] = useState('Todos');
-  const [filtroFecha, setFiltroFecha] = useState('Todos');
-  const [loadingCunas, setLoadingCunas] = useState(true); // Nuevo estado para la carga de cunas
+  const [alertas, setAlertas] = useState(null)
+  const [filtroNivel, setFiltroNivel] = useState("Todos")
+  const [loadingCunas, setLoadingCunas] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [modalVisible, setModalVisible] = useState(false)
+  const [observacion, setObservacion] = useState("")
+  const [alertaSeleccionada, setAlertaSeleccionada] = useState(null)
 
-  // IPs y Puertos de tus backends
-  const SQL_API_BASE = 'http://172.18.2.158:3000'; // Tu API de SQL Server
-  const MONGO_API_BASE = 'http://172.18.2.158:5000'; // Tu API de MongoDB
+  const SQL_API_BASE = "http://localhost:3000"
+  const MONGO_API_BASE = "http://localhost:5000"
+
+  const fetchAlertsForEnfermero = async () => {
+    if (!userId) {
+      setLoadingCunas(false)
+      setAlertas([])
+      return
+    }
+
+    setLoadingCunas(true)
+    setAlertas(null)
+
+    try {
+      const cunasSqlRes = await fetch(`${SQL_API_BASE}/api/cunas/enfermero/${userId}`)
+      if (!cunasSqlRes.ok) {
+        throw new Error("Error al obtener cunas")
+      }
+      const cunasSql = await cunasSqlRes.json()
+
+      if (cunasSql.length === 0) {
+        setAlertas([])
+        setLoadingCunas(false)
+        return
+      }
+
+      const cunasMongoIds = cunasSql.map((cuna) => {
+        const cunaNum = String(cuna.idCuna).padStart(3, "0")
+        return `CUNA${cunaNum}`
+      })
+      const cunasQueryParam = cunasMongoIds.join(",")
+
+      const mongoAlertsRes = await fetch(`${MONGO_API_BASE}/alertas?cunas=${cunasQueryParam}`)
+      if (!mongoAlertsRes.ok) {
+        throw new Error("Error al obtener alertas")
+      }
+      const mongoAlertsData = await mongoAlertsRes.json()
+
+      // Ordenar alertas: primero pendientes, luego resueltas, y ambas por fecha descendente
+      const sortedAlerts = (mongoAlertsData.data || mongoAlertsData).sort((a, b) => {
+        const estadoA = a.estado?.toLowerCase() || "pendiente"
+        const estadoB = b.estado?.toLowerCase() || "pendiente"
+        const dateA = new Date(a.timestamp)
+        const dateB = new Date(b.timestamp)
+
+        if (estadoA === "pendiente" && estadoB !== "pendiente") return -1
+        if (estadoA !== "pendiente" && estadoB === "pendiente") return 1
+        return dateB - dateA // Ordenar por fecha más reciente primero
+      })
+
+      setAlertas(sortedAlerts)
+    } catch (err) {
+      Alert.alert("Error", "No se pudieron cargar las alertas")
+      setAlertas([])
+    } finally {
+      setLoadingCunas(false)
+    }
+  }
+
+  // Modal para observación
+  const abrirModal = (alerta) => {
+    setAlertaSeleccionada(alerta)
+    setObservacion("")
+    setModalVisible(true)
+  }
+  const cerrarModal = () => {
+    setModalVisible(false)
+    setAlertaSeleccionada(null)
+    setObservacion("")
+  }
+
+  // Marcar alerta como resuelta con observación y nombre real
+  const resolverAlerta = async () => {
+    if (!alertaSeleccionada) return
+    try {
+      let nombreEnfermero = "Enfermero"
+      try {
+        const resNombre = await fetch(`${SQL_API_BASE}/api/usuarios/${userId}/nombre`)
+        if (resNombre.ok) {
+          const dataNombre = await resNombre.json()
+          if (dataNombre && dataNombre.nombre) {
+            nombreEnfermero = dataNombre.nombre
+          } else {
+            Alert.alert("Error", "No se pudo obtener el nombre del enfermero. Se usará 'Enfermero'.")
+          }
+        } else {
+          Alert.alert("Error", "No se pudo obtener el nombre del enfermero (respuesta no OK). Se usará 'Enfermero'.")
+        }
+      } catch (e) {
+        Alert.alert("Error", "No se pudo obtener el nombre del enfermero (error de red). Se usará 'Enfermero'.")
+      }
+
+      // LOG para depuración
+      console.log("[DEBUG] Valor de nombreEnfermero que se enviará a Mongo:", nombreEnfermero)
+
+      // 2. Enviar el nombre y observación al backend de Mongo
+      const res = await fetch(`${MONGO_API_BASE}/alertas/${alertaSeleccionada._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          estado: "resuelta",
+          atendidaPor: nombreEnfermero,
+          observacion: observacion || "Sin observaciones",
+        }),
+      })
+      if (!res.ok) throw new Error("No se pudo actualizar la alerta")
+      cerrarModal()
+      await fetchAlertsForEnfermero()
+    } catch (err) {
+      Alert.alert("Error", "No se pudo marcar la alerta como resuelta")
+    }
+  }
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true)
+    await fetchAlertsForEnfermero()
+    setRefreshing(false)
+  }, [userId])
 
   useEffect(() => {
-    const fetchAlertsForEnfermero = async () => {
-      if (!userId) {
-        console.log('ChartEnfermeroScreen: userId no está disponible aún.');
-        setLoadingCunas(false);
-        setAlertas([]); // Aseguramos que no se quede cargando
-        return;
-      }
+    fetchAlertsForEnfermero()
+  }, [userId])
 
-      setLoadingCunas(true); // Iniciar carga de cunas y alertas
-      setAlertas(null); // Reiniciar alertas para mostrar indicador de carga
+  const clasificaNivel = (al) => {
+    const tipo = al.tipo.toLowerCase()
+    if (
+      tipo.includes("critica") ||
+      (al.tipo.includes("Oxigenación baja") && al.valor <= 85) ||
+      (al.tipo.includes("Frecuencia cardíaca anormal") && (al.valor > 160 || al.valor < 50))
+    ) {
+      return "🔴 Urgente"
+    }
+    if (
+      tipo.includes("media") ||
+      (al.tipo.includes("Oxigenación baja") && al.valor > 85 && al.valor <= 90) ||
+      (al.tipo.includes("Frecuencia cardíaca anormal") &&
+        ((al.valor > 150 && al.valor <= 160) || (al.valor >= 50 && al.valor < 60)))
+    ) {
+      return "🟡 Revisar"
+    }
+    return "🟢 Normal"
+  }
 
-      try {
-        // 1. Obtener IDs de cuna SQL asignadas al enfermero
-        console.log(`ChartEnfermeroScreen: Fetching SQL cunas for userId: ${userId}`);
-        const cunasSqlRes = await fetch(`${SQL_API_BASE}/api/cunas/enfermero/${userId}`);
-        if (!cunasSqlRes.ok) {
-          const errorText = await cunasSqlRes.text();
-          throw new Error(`Error ${cunasSqlRes.status}: ${errorText} al obtener cunas de SQL`);
-        }
-        const cunasSql = await cunasSqlRes.json();
-        console.log('ChartEnfermeroScreen: Cunas SQL obtenidas:', cunasSql);
-
-        if (cunasSql.length === 0) {
-            Alert.alert("Sin Cunas", "Este enfermero no tiene cunas asignadas.");
-            setAlertas([]);
-            setLoadingCunas(false);
-            return;
-        }
-
-        // 2. Mapear IDs de cuna SQL a IDs de cuna de MongoDB
-        // Asumiendo que el idCuna de SQL es un número y en Mongo es CUNA00X
-        const cunasMongoIds = cunasSql.map(cuna => {
-            const cunaNum = String(cuna.idCuna).padStart(3, '0'); // Rellena con ceros para tener 3 dígitos
-            return `CUNA${cunaNum}`;
-        });
-        const cunasQueryParam = cunasMongoIds.join(',');
-        console.log('ChartEnfermeroScreen: Cunas Mongo para consulta:', cunasQueryParam);
-
-        // 3. Construir la URL de la API de MongoDB con los IDs de cuna
-        const MONGO_ALERTS_API_URL = `${MONGO_API_BASE}/alertas?cunas=${cunasQueryParam}`;
-        console.log(`ChartEnfermeroScreen: Fetching MongoDB alerts from: ${MONGO_ALERTS_API_URL}`);
-
-        // 4. Obtener alertas de MongoDB
-        const mongoAlertsRes = await fetch(MONGO_ALERTS_API_URL);
-        if (!mongoAlertsRes.ok) {
-          const errorText = await mongoAlertsRes.text();
-          throw new Error(`Error ${mongoAlertsRes.status}: ${errorText} al obtener alertas de Mongo`);
-        }
-        const mongoAlertsData = await mongoAlertsRes.json();
-        console.log('ChartEnfermeroScreen: Alertas de Mongo obtenidas:', mongoAlertsData);
-
-        // Si la respuesta tiene una propiedad 'data', la usamos; de lo contrario, la respuesta completa.
-        setAlertas(mongoAlertsData.data || mongoAlertsData);
-
-      } catch (err) {
-        console.error('❌ ChartEnfermeroScreen: Error general al cargar alertas:', err);
-        Alert.alert("Error de Carga", `No se pudieron cargar las alertas. Detalle: ${err.message}`);
-        setAlertas([]); // Asegurar que el estado no sea 'null' para salir del loading
-      } finally {
-        setLoadingCunas(false); // Finalizar carga
-      }
-    };
-
-    fetchAlertsForEnfermero();
-  }, [userId]); // El efecto se ejecuta cuando userId cambia
+  const getAlertColors = (nivel) => {
+    switch (nivel) {
+      case "🔴 Urgente":
+        return { bg: "#fdf2f8", border: "#f9a8d4", text: "#be185d", icon: "#ec4899" }
+      case "🟡 Revisar":
+        return { bg: "#fefce8", border: "#fde047", text: "#a16207", icon: "#eab308" }
+      default:
+        return { bg: "#f3f4f6", border: "#d1d5db", text: "#374151", icon: "#6b7280" }
+    }
+  }
 
   if (loadingCunas || alertas === null) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#6c5ce7" />
-        <Text style={styles.loadingText}>Cargando alertas de cunas...</Text>
-      </View>
-    );
+      <>
+        <StatusBar barStyle="light-content" backgroundColor="#7c3aed" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#7c3aed" />
+          <Text style={styles.loadingText}>Cargando alertas...</Text>
+        </View>
+      </>
+    )
   }
 
-  const clasificaNivel = (al) => {
-    const tipo = al.tipo.toLowerCase();
-    // Aquí puedes ajustar la lógica de niveles según tus necesidades exactas
-    if (tipo.includes('critica') || (al.tipo.includes('Oxigenación baja') && al.valor <= 85) || (al.tipo.includes('Frecuencia cardíaca anormal') && (al.valor > 160 || al.valor < 50))) return 'Crítico';
-    if (tipo.includes('media') || (al.tipo.includes('Oxigenación baja') && al.valor > 85 && al.valor <= 90) || (al.tipo.includes('Frecuencia cardíaca anormal') && ((al.valor > 150 && al.valor <= 160) || (al.valor >= 50 && al.valor < 60)))) return 'Medio';
-    return 'Leve';
-  };
-
-  const getBackgroundColor = (nivel) => {
-    switch (nivel) {
-      case 'Crítico': return '#fdecea';
-      case 'Medio': return '#fff8e6';
-      default: return '#f3f0ff';
-    }
-  };
-
-  const getIconColor = (nivel) => {
-    switch (nivel) {
-      case 'Crítico': return '#e74c3c';
-      case 'Medio': return '#f39c12';
-      default: return '#6c5ce7';
-    }
-  };
-
-  let filtradas = alertas;
-  if (filtroTipo !== 'Todos') {
-    filtradas = filtradas.filter(al => al.tipo === filtroTipo);
-  }
-  if (filtroNivel !== 'Todos') {
-    filtradas = filtradas.filter(al => clasificaNivel(al) === filtroNivel);
-  }
-  if (filtroFecha === 'Hoy') {
-    filtradas = filtradas.filter(al => {
-      const fecha = new Date(al.timestamp);
-      const hoy = new Date();
-      return fecha.toDateString() === hoy.toDateString();
-    });
+  // Solo mostrar alertas pendientes y aplicar filtro de nivel
+  let filtradas = alertas
+    ? alertas.filter(al => (al.estado?.toLowerCase() === "pendiente" || !al.estado))
+    : []
+  if (filtroNivel !== "Todos") {
+    filtradas = filtradas.filter((al) => clasificaNivel(al) === filtroNivel)
   }
 
-  // Asegúrate de que alertas no sea null antes de mapear para tipos únicos
-  const tiposUnicos = alertas ? [...new Set(alertas.map(al => al.tipo))] : [];
+  // Estadísticas simples
+  const stats = {
+    urgentes: filtradas.filter((al) => clasificaNivel(al) === "🔴 Urgente").length,
+    revisar: filtradas.filter((al) => clasificaNivel(al) === "🟡 Revisar").length,
+    normales: filtradas.filter((al) => clasificaNivel(al) === "🟢 Normal").length,
+  }
 
   return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.screenTitle}>🩺 Alertas Filtrables</Text>
-
-      <View style={styles.filtrosContainer}>
-        <Text style={styles.filtroTitle}>Tipo:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipRow}>
-          <FiltroChip
-            label="Todos"
-            activo={filtroTipo === 'Todos'}
-            onPress={() => setFiltroTipo('Todos')}
-            icon="layers-outline"
-          />
-          {tiposUnicos.map(tipo => (
-            <FiltroChip
-              key={tipo}
-              label={tipo}
-              activo={filtroTipo === tipo}
-              onPress={() => setFiltroTipo(tipo)}
-              icon="alert-circle-outline"
-            />
-          ))}
-        </ScrollView>
-
-        <Text style={styles.filtroTitle}>Gravedad:</Text>
-        <View style={styles.chipRow}>
-          {['Todos', 'Crítico', 'Medio', 'Leve'].map(nivel => (
-            <FiltroChip
-              key={nivel}
-              label={nivel}
-              activo={filtroNivel === nivel}
-              onPress={() => setFiltroNivel(nivel)}
-              icon="warning-outline"
-            />
-          ))}
+    <>
+      <StatusBar barStyle="light-content" backgroundColor="#7c3aed" />
+      <ScrollView
+        style={styles.container}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#7c3aed"]} />}
+      >
+        {/* Header Simple */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}> Alertas del Turno</Text>
+          <Text style={styles.headerSubtitle}>Monitoreo en tiempo real</Text>
         </View>
 
-        <Text style={styles.filtroTitle}>Fecha:</Text>
-        <View style={styles.chipRow}>
-          {['Todos', 'Hoy'].map(fecha => (
-            <FiltroChip
-              key={fecha}
-              label={fecha}
-              activo={filtroFecha === fecha}
-              onPress={() => setFiltroFecha(fecha)}
-              icon="calendar-outline"
-            />
-          ))}
-        </View>
-      </View>
+        {/* Resumen Visual Simple */}
+        <View style={styles.summaryContainer}>
+          <View style={[styles.summaryCard, styles.urgentCard]}>
+            <Text style={styles.summaryNumber}>{stats.urgentes}</Text>
+            <Text style={styles.summaryLabel}>🔴 Urgentes</Text>
+          </View>
 
-      <View style={styles.listContainer}>
-        {filtradas.length === 0 && (
-          <Text style={{ textAlign: 'center', marginTop: 20, color: '#636e72' }}>
-            No hay alertas que coincidan con el filtro.
-          </Text>
-        )}
-        {filtradas.map((al, idx) => {
-          const nivel = clasificaNivel(al);
-          const bg = getBackgroundColor(nivel);
-          const iconColor = getIconColor(nivel);
-          return (
-            <View key={idx} style={[styles.alertItem, { backgroundColor: bg }]}>
-              <View style={styles.alertHeader}>
-                <Ionicons name="warning" size={22} color={iconColor} />
-                <Text style={[styles.alertText, { color: iconColor }]}>
-                  {al.tipo} - {nivel}
+          <View style={[styles.summaryCard, styles.reviewCard]}>
+            <Text style={styles.summaryNumber}>{stats.revisar}</Text>
+            <Text style={styles.summaryLabel}>🟡 Revisar</Text>
+          </View>
+
+          <View style={[styles.summaryCard, styles.normalCard]}>
+            <Text style={styles.summaryNumber}>{stats.normales}</Text>
+            <Text style={styles.summaryLabel}>🟢 Normales</Text>
+          </View>
+        </View>
+
+        {/* Filtros Simples */}
+        <View style={styles.filtersContainer}>
+          <Text style={styles.filtersTitle}>Ver:</Text>
+          <View style={styles.filterButtons}>
+            {["Todos", "🔴 Urgente", "🟡 Revisar", "🟢 Normal"].map((nivel) => (
+              <TouchableOpacity
+                key={nivel}
+                style={[styles.filterButton, filtroNivel === nivel && styles.filterButtonActive]}
+                onPress={() => setFiltroNivel(nivel)}
+              >
+                <Text style={[styles.filterButtonText, filtroNivel === nivel && styles.filterButtonTextActive]}>
+                  {nivel}
                 </Text>
-              </View>
-              <Text style={styles.alertSubText}>Valor: {al.valor}</Text>
-              <Text style={styles.alertSubText}>Cuna: {al.cunaId}</Text>
-              <Text style={styles.alertTimestamp}>
-                {new Date(al.timestamp).toLocaleString()}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-    </ScrollView>
-  );
-}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-// Componente Chip reutilizable (sin cambios)
-function FiltroChip({ label, activo, onPress, icon }) {
-  return (
-    <TouchableOpacity
-      style={[styles.chip, activo && styles.chipActivo]}
-      onPress={onPress}
-    >
-      <Ionicons
-        name={icon}
-        size={16}
-        color={activo ? '#fff' : '#6c5ce7'}
-        style={{ marginRight: 4 }}
-      />
-      <Text style={[styles.chipTexto, activo && { color: '#fff' }]}>{label}</Text>
-    </TouchableOpacity>
-  );
+        {/* Lista de Alertas Simplificada */}
+        <View style={styles.alertsContainer}>
+          <Text style={styles.alertsTitle}>
+            {filtradas.length === 0
+              ? "✅ Todo bajo control"
+              : `${filtradas.length} ${filtradas.length === 1 ? "alerta" : "alertas"}`}
+          </Text>
+
+          {filtradas.length === 0 ? (
+            <View style={styles.noAlertsContainer}>
+              <Text style={styles.noAlertsText}>No hay alertas para este filtro</Text>
+              <Text style={styles.noAlertsSubtext}>Todos los pacientes están estables</Text>
+            </View>
+          ) : (
+            filtradas.map((al, idx) => {
+              const nivel = clasificaNivel(al)
+              const colors = getAlertColors(nivel)
+
+              return (
+                <View
+                  key={al._id || idx}
+                  style={[styles.alertCard, { backgroundColor: colors.bg, borderLeftColor: colors.icon }]}
+                >
+                  <View style={styles.alertHeader}>
+                    <Text style={[styles.alertLevel, { color: colors.text }]}>{nivel}</Text>
+                    <Text style={styles.alertTime}>
+                      {new Date(al.timestamp).toLocaleTimeString("es-ES", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.alertMessage}>{al.tipo}</Text>
+
+                  <View style={styles.alertFooter}>
+                    <Text style={styles.alertCuna}>📍 {al.cunaId}</Text>
+                    <TouchableOpacity
+                      style={{
+                        backgroundColor: "#7c3aed",
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        marginLeft: "auto",
+                      }}
+                      onPress={() => abrirModal(al)}
+                    >
+                      <Text style={{ color: "#fff", fontWeight: "bold" }}>Marcar resuelta</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )
+            })
+          )}
+        </View>
+      </ScrollView>
+      {/* Modal para observación */}
+      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={cerrarModal}>
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.container}>
+            <Text style={modalStyles.title}>Observación al resolver alerta</Text>
+            <TextInput
+              style={modalStyles.input}
+              placeholder="Describe cómo resolviste la alerta o escribe 'Sin observaciones'"
+              value={observacion}
+              onChangeText={setObservacion}
+              multiline
+            />
+            <View style={modalStyles.buttonContainer}>
+              <TouchableOpacity style={modalStyles.cancelButton} onPress={cerrarModal}>
+                <Text style={modalStyles.buttonText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={modalStyles.confirmButton} onPress={resolverAlerta}>
+                <Text style={modalStyles.buttonText}>Confirmar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#f9f9fb' },
-  screenTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#6c5ce7',
-    textAlign: 'center',
-    marginBottom: 20,
+  container: {
+    flex: 1,
+    backgroundColor: "#f8fafc",
   },
-  filtrosContainer: { marginBottom: 20 },
-  filtroTitle: { fontWeight: 'bold', color: '#2d3436', marginVertical: 8 },
-  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 10 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#edf2fb',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    marginRight: 8,
-    marginBottom: 6,
-  },
-  chipActivo: {
-    backgroundColor: '#6c5ce7',
-  },
-  chipTexto: {
-    color: '#6c5ce7',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  listContainer: { paddingBottom: 40 },
-  alertItem: {
-    padding: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    elevation: 2,
-  },
-  alertHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  alertText: { fontSize: 16, fontWeight: 'bold', marginLeft: 8 },
-  alertSubText: { fontSize: 14, color: '#636e72' },
-  alertTimestamp: { fontSize: 12, color: '#636e72', marginTop: 4 },
   loadingContainer: {
     flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 18,
+    color: "#7c3aed",
+    fontWeight: "600",
+  },
+  header: {
+    backgroundColor: "#7c3aed",
+    paddingTop: 60,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#ffffff",
+    marginBottom: 8,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: "#e9d5ff",
+  },
+  summaryContainer: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    gap: 12,
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 20,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderLeftWidth: 4,
+  },
+  urgentCard: {
+    borderLeftColor: "#ec4899",
+  },
+  reviewCard: {
+    borderLeftColor: "#eab308",
+  },
+  normalCard: {
+    borderLeftColor: "#6b7280",
+  },
+  summaryNumber: {
+    fontSize: 32,
+    fontWeight: "bold",
+    color: "#1f2937",
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: "#6b7280",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  filtersContainer: {
+    backgroundColor: "#ffffff",
+    marginHorizontal: 20,
+    marginTop: 20,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  filtersTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#1f2937",
+    marginBottom: 16,
+  },
+  filterButtons: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  filterButton: {
+    backgroundColor: "#f3f4f6",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#e5e7eb",
+  },
+  filterButtonActive: {
+    backgroundColor: "#7c3aed",
+    borderColor: "#7c3aed",
+  },
+  filterButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#374151",
+  },
+  filterButtonTextActive: {
+    color: "#ffffff",
+  },
+  alertsContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 30,
+  },
+  alertsTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#1f2937",
+    marginBottom: 16,
+  },
+  noAlertsContainer: {
+    backgroundColor: "#ffffff",
+    borderRadius: 16,
+    padding: 40,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  noAlertsText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#059669",
+    marginBottom: 8,
+  },
+  noAlertsSubtext: {
+    fontSize: 14,
+    color: "#6b7280",
+  },
+  alertCard: {
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  alertHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  alertLevel: {
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  alertTime: {
+    fontSize: 14,
+    color: "#6b7280",
+    fontWeight: "500",
+  },
+  alertMessage: {
+    fontSize: 16,
+    color: "#1f2937",
+    marginBottom: 12,
+    lineHeight: 22,
+  },
+  alertFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  alertCuna: {
+    fontSize: 14,
+    color: "#7c3aed",
+    fontWeight: "600",
+  },
+  alertValue: {
+    fontSize: 14,
+    color: "#6b7280",
+    fontWeight: "500",
+  },
+})
+
+// Estilos para el modal
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9f9fb',
   },
-  loadingText: { marginTop: 10, fontSize: 16, color: '#6c5ce7' },
-});
+  container: {
+    width: '85%',
+    backgroundColor: '#fff',
+    borderRadius: 15,
+    padding: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#7c3aed',
+    marginBottom: 15,
+    textAlign: 'center',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 60,
+    width: '100%',
+    marginBottom: 20,
+    backgroundColor: '#f9fafb',
+    fontSize: 15,
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    width: '100%',
+  },
+  confirmButton: {
+    backgroundColor: '#7c3aed',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    minWidth: 100,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#6c757d',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 25,
+    minWidth: 100,
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+})

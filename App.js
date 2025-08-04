@@ -29,7 +29,7 @@ import CunaEnfermeroScreen from './ScreensEnfermero/CunaEnfermero';
 import ChartEnfermeroScreen from './ScreensEnfermero/ChartEnfermero';
 import HomeEnfermeroScreen from './ScreensEnfermero/HomeEnfermero';
 import HistoryEnfermeroScreen from './ScreensEnfermero/HistorialEnfermero';
-
+import RegistroAlimentacionScreen from './ScreensEnfermero/alimentacion';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -222,6 +222,7 @@ function ParentTabNavigator({ userId }) {
       >
         {props => <HistoryScreen {...props} userId={userId} />}
       </Tab.Screen>
+        
     </Tab.Navigator>
   );
 }
@@ -261,6 +262,14 @@ function NurseTabNavigator({ userId }) {
       >
         {props => <HistoryEnfermeroScreen {...props} userId={userId} />}
       </Tab.Screen>
+       <Tab.Screen
+        name="Alimentación"
+        options={{
+          tabBarIcon: ({ color, size }) => <Ionicons name="restaurant-outline" size={size} color={color} />,
+        }}
+      >
+        {props => <RegistroAlimentacionScreen {...props} idUsuario={userId} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }
@@ -289,7 +298,7 @@ export default function App() {
 
       // 2. SEGUNDA LLAMADA A LA API: Obtener el idUsuario usando el nuevo endpoint
       // Asegúrate de que esta URL sea correcta y que tu backend esté corriendo en esa IP y puerto
-      const userIdApiUrl = `http://172.18.2.158:3000/api/usuario-id-by-email?email=${encodeURIComponent(firebaseUser.email)}`;
+      const userIdApiUrl = `http://localhost:3000/api/usuario-id-by-email?email=${encodeURIComponent(firebaseUser.email)}`;
       const responseId = await fetch(userIdApiUrl);
       
       if (!responseId.ok) {

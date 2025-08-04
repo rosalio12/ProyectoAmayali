@@ -24,7 +24,7 @@ export const registerUser = async (email, password, nombre, apellidos, numTel, f
 
   // --- CORRECCIÓN ---
   // Se llama al endpoint correcto `/api/registroConCasa` y se envían todos los datos.
-  await axios.post('http://172.18.2.158:3000/api/registroConCasa', {
+  await axios.post('http://localhost:3000/api/registroConCasa', {
     firebaseUID,
     Nombre: nombre,
     Apellidos: apellidos,
@@ -74,8 +74,11 @@ export const logoutUser = async () => {
  * Consultar rol del usuario usando el email.
  */
 export async function fetchUserRole(email) {
-  // Se construye la URL con el parámetro de consulta `email`
-  const url = `http://172.18.2.158:3000/api/rol/by-email?email=${encodeURIComponent(email)}`;
+  // Cambia la IP/puerto si tu backend está en localhost o en otra IP
+  // Ejemplo para localhost:
+  // const url = `http://localhost:3000/api/rol/by-email?email=${encodeURIComponent(email)}`;
+  // Ejemplo para tu IP actual:
+  const url = `http://localhost:3000/api/rol/by-email?email=${encodeURIComponent(email)}`;
 
   const resp = await fetch(url);
 
