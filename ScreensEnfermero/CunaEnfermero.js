@@ -103,6 +103,9 @@ export default function CunasEnfermeroScreen({ userId }) {
     const [cunaProblema, setCunaProblema] = useState('');
     const [descripcionProblema, setDescripcionProblema] = useState('');
     const [enviandoProblema, setEnviandoProblema] = useState(false);
+    const [avanzadoData, setAvanzadoData] = useState({});
+    const [loadingAvanzado, setLoadingAvanzado] = useState({});
+    const [ultimoTimestampAvanzado, setUltimoTimestampAvanzado] = useState({});
 
     // --- Data Fetching ---
     const fetchCunas = async () => {
@@ -147,25 +150,72 @@ export default function CunasEnfermeroScreen({ userId }) {
 
         const fetchAllData = async () => {
             const cunaMongoIds = cunas.map(c => `CUNA${String(c.idCuna).padStart(3, '0')}`).join(',');
-            
+
+            // 1. Datos básicos (frecuencia cardiaca, oxigenacion, temperatura, movimiento)
+            let basicSensorData = {};
             try {
                 const sensorRes = await fetch(`${MONGO_API_BASE}/sensor-data?cunas=${cunaMongoIds}&limit=${cunas.length}`);
                 if(sensorRes.ok) {
                     const sensorJson = await sensorRes.json();
                     if (isMounted && sensorJson.data) {
-                        const mappedSensorData = sensorJson.data.reduce((acc, reading) => {
-                            const cunaIdNumber = parseInt(reading.cunaId.replace('CUNA', ''), 10);
+                        basicSensorData = sensorJson.data.reduce((acc, reading) => {
+                            const cunaIdNumber = parseInt((reading.cunaId || '').replace('CUNA', ''), 10);
                             if (!acc[cunaIdNumber]) {
-                                acc[cunaIdNumber] = reading;
+                                acc[cunaIdNumber] = {
+                                    ...reading,
+                                    temperatura: reading.temperatura ?? null,
+                                    movimiento: reading.movimiento ?? null,
+                                    frecuenciaCardiaca: reading.frecuenciaCardiaca,
+                                    oxigenacion: reading.oxigenacion,
+                                };
                             }
                             return acc;
                         }, {});
-                        setSensorData(mappedSensorData);
                     }
                 }
             } catch(e) {
-                console.error("Error fetching sensor data from MongoDB:", e);
+                console.error("Error fetching basic sensor data from MongoDB:", e);
             }
+
+            // 2. Datos avanzados (mlx, scd40, co2, peso, etc)
+            let advancedSensorData = {};
+            try {
+                const advRes = await fetch(`${MONGO_API_BASE}/sensor-data/avanzado?cunas=${cunaMongoIds}&limit=${cunas.length}`);
+                if (advRes.ok) {
+                    const advJson = await advRes.json();
+                    if (isMounted && advJson.data) {
+                        advancedSensorData = advJson.data.reduce((acc, reading) => {
+                            const cunaIdNumber = parseInt((reading.cunaId || '').replace('CUNA', ''), 10);
+                            if (!acc[cunaIdNumber]) {
+                                acc[cunaIdNumber] = {
+                                    temperatura_mlx_ambiente: reading.temperatura_mlx_ambiente,
+                                    temperatura_mlx_objeto: reading.temperatura_mlx_objeto,
+                                    peso: reading.peso_kg,
+                                    movimiento_cuna: reading.movimiento_cuna,
+                                    co2_ppm: reading.co2_ppm,
+                                    temperatura_scd40: reading.temperatura_scd40,
+                                    humedad_scd40: reading.humedad_scd40,
+                                    server_timestamp: reading.server_timestamp,
+                                };
+                            }
+                            return acc;
+                        }, {});
+                    }
+                }
+            } catch(e) {
+                console.error("Error fetching advanced sensor data from MongoDB:", e);
+            }
+
+            // 3. Unir ambos tipos de datos
+            const mergedData = {};
+            cunas.forEach(cuna => {
+                const id = cuna.idCuna;
+                mergedData[id] = {
+                    ...(basicSensorData[id] || {}),
+                    ...(advancedSensorData[id] || {}),
+                };
+            });
+            setSensorData(mergedData);
 
             try {
                 const weightPromises = cunas.map(cuna =>
@@ -189,11 +239,11 @@ export default function CunasEnfermeroScreen({ userId }) {
         };
 
         fetchAllData();
-        const interval = setInterval(fetchAllData, 6000);
+ 
 
         return () => {
             isMounted = false;
-            clearInterval(interval);
+         
         };
     }, [cunas]);
 
@@ -292,11 +342,40 @@ export default function CunasEnfermeroScreen({ userId }) {
         }
     };
 
+    // --- Fetch avanzado por cuna seleccionada (sin intervalos, solo cuando cambia cuna o sensorData) ---
+    useEffect(() => {
+        if (!cunaSeleccionada) return;
+        const cunaKey = cunaSeleccionada.idCuna;
+        const mongoId = `CUNA${String(cunaKey).padStart(3, '0')}`;
+
+        const fetchLatestAvanzado = async () => {
+            setLoadingAvanzado(prev => ({ ...prev, [cunaKey]: true }));
+            try {
+                const res = await fetch(`${MONGO_API_BASE}/sensor-data/avanzado?cunas=${mongoId}&limit=1`);
+                const json = await res.json();
+                let latest = null;
+                if (json.data && Array.isArray(json.data) && json.data.length > 0) {
+                    latest = json.data[0];
+                }
+                setAvanzadoData(prev => ({ ...prev, [cunaKey]: latest || null }));
+            } catch {
+                setAvanzadoData(prev => ({ ...prev, [cunaKey]: null }));
+            } finally {
+                setLoadingAvanzado(prev => ({ ...prev, [cunaKey]: false }));
+            }
+        };
+
+        fetchLatestAvanzado();
+        // Solo se ejecuta cuando cambia la cuna seleccionada o los datos básicos
+    }, [cunaSeleccionada, sensorData]);
+
     // --- Render Components ---
     const renderDetalleCuna = (cuna) => {
         const sensor = getCunaSensorData(cuna.idCuna);
         const peso = getCunaWeight(cuna.idCuna);
-        
+        const avanzado = avanzadoData[cuna.idCuna];
+        const loadingAvz = loadingAvanzado[cuna.idCuna];
+
         return (
             <View style={styles.detalleContainer}>
                 <View style={styles.detalleHeader}>
@@ -306,11 +385,28 @@ export default function CunasEnfermeroScreen({ userId }) {
 
                 <View style={styles.detalleCard}>
                     <Text style={styles.cardSectionTitle}>Signos Vitales</Text>
-                    <Dato icon="thermometer-outline" label="Temperatura" value={sensor?.temperatura !== undefined ? `${sensor.temperatura.toFixed(1)}` : '---'} unit="°C" color="#C026D3" />
+                    {/* Datos básicos */}
+                    <Dato icon="thermometer-outline" label="Temperatura" value={sensor?.temperatura !== undefined ? sensor.temperatura.toFixed(1) : '---'} unit="°C" color="#C026D3" />
                     <Dato icon="heart-outline" label="Frec. Cardiaca" value={sensor?.frecuenciaCardiaca !== undefined ? sensor.frecuenciaCardiaca : '---'} unit="BPM" color="#DB2777" />
                     <Dato icon="pulse-outline" label="Oxigenación" value={sensor?.oxigenacion !== undefined ? `${sensor.oxigenacion}` : '---'} unit="%" color="#4338CA" />
                     <Dato icon="body-outline" label="Movimiento" value={sensor?.movimiento !== undefined ? (sensor.movimiento ? 'Detectado' : 'No Detectado') : '---'} color="#7C3AED" />
-                    <Dato icon="scale-outline" label="Peso Actual" value={peso !== '---' ? `${peso}` : '---'} unit="kg" color="#6D28D9" />
+                    <Dato icon="scale-outline" label="Peso de nacimiento" value={peso !== '---' ? `${peso}` : '---'} unit="kg" color="#6D28D9" />
+                    {/* Datos avanzados */}
+                    {loadingAvz ? (
+                        <Text style={{ color: '#888', marginTop: 8 }}>Cargando datos avanzados...</Text>
+                    ) : avanzado ? (
+                        <>
+                            <Dato icon="thermometer-outline" label="Temp. MLX Objeto" value={avanzado.temperatura_mlx_objeto !== undefined ? avanzado.temperatura_mlx_objeto.toFixed(1) : '---'} unit="°C" color="#C026D3" />
+                            <Dato icon="thermometer-outline" label="Temp. MLX Ambiente" value={avanzado.temperatura_mlx_ambiente !== undefined ? avanzado.temperatura_mlx_ambiente.toFixed(1) : '---'} unit="°C" color="#C026D3" />
+                            <Dato icon="thermometer-outline" label="Temp. SCD40" value={avanzado.temperatura_scd40 !== undefined ? avanzado.temperatura_scd40.toFixed(1) : '---'} unit="°C" color="#C026D3" />
+                            <Dato icon="water-outline" label="Humedad SCD40" value={avanzado.humedad_scd40 !== undefined ? avanzado.humedad_scd40.toFixed(1) : '---'} unit="%" color="#009688" />
+                            <Dato icon="cloud-outline" label="CO₂" value={avanzado.co2_ppm !== undefined ? avanzado.co2_ppm : '---'} unit="ppm" color="#607D8B" />
+                            <Dato icon="body-outline" label="Movimiento Cuna" value={avanzado.movimiento_cuna !== undefined ? (avanzado.movimiento_cuna ? 'Detectado' : 'No Detectado') : '---'} color="#7C3AED" />
+                            <Dato icon="scale-outline" label="Peso actual" value={avanzado.peso_kg !== undefined ? `${avanzado.peso_kg}` : '---'} unit="kg" color="#6D28D9" />
+                        </>
+                    ) : (
+                        <Text style={{ color: '#888', marginTop: 8 }}>Sin datos avanzados</Text>
+                    )}
                 </View>
 
                 <View style={styles.detalleCard}>
@@ -570,3 +666,4 @@ const modalStyles = StyleSheet.create({
     confirmButtonText: { color: '#fff' },
     cancelButtonText: { color: colors.textSecondary },
 });
+    

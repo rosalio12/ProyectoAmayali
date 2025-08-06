@@ -313,6 +313,55 @@ app.post('/problemas-tecnicos', async (req, res) => {
   }
 });
 
+// Nuevo endpoint para datos avanzados de la cuna (lecturas avanzadas)
+app.get('/sensor-data/avanzado', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+    const query = req.query.cunas ? { cunaId: { $in: req.query.cunas.split(',') } } : {};
+    // Solo traer documentos que tengan al menos uno de los campos avanzados
+    query.$or = [
+      { temperatura_mlx_ambiente: { $exists: true } },
+      { temperatura_mlx_objeto: { $exists: true } },
+      { peso_kg: { $exists: true } },
+      { movimiento_cuna: { $exists: true } },
+      { co2_ppm: { $exists: true } },
+      { temperatura_scd40: { $exists: true } },
+      { humedad_scd40: { $exists: true } }
+    ];
+    const data = await SensorData.find(query).sort({ timestamp: -1 }).limit(limit);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Nuevo endpoint: datos avanzados por cunaId específico
+app.get('/sensor-data/avanzado/cuna/:cunaId', async (req, res) => {
+  try {
+    const cunaId = req.params.cunaId;
+    if (!cunaId) {
+      return res.status(400).json({ success: false, error: 'Falta el parámetro cunaId' });
+    }
+    // Busca el último registro avanzado para esa cuna
+    const query = {
+      cunaId: cunaId,
+      $or: [
+        { temperatura_mlx_ambiente: { $exists: true } },
+        { temperatura_mlx_objeto: { $exists: true } },
+        { peso_kg: { $exists: true } },
+        { movimiento_cuna: { $exists: true } },
+        { co2_ppm: { $exists: true } },
+        { temperatura_scd40: { $exists: true } },
+        { humedad_scd40: { $exists: true } }
+      ]
+    };
+    const data = await SensorData.findOne(query).sort({ timestamp: -1 });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);

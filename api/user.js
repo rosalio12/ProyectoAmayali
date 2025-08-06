@@ -74,9 +74,9 @@ export const logoutUser = async () => {
  * Consultar rol del usuario usando el email.
  */
 export async function fetchUserRole(email) {
-  // Cambia la IP/puerto si tu backend está en localhost o en otra IP
-  // Ejemplo para localhost:
-  // const url = `http://localhost:3000/api/rol/by-email?email=${encodeURIComponent(email)}`;
+  // Cambia la IP/puerto si tu backend está en 192.168.0.223 o en otra IP
+  // Ejemplo para 192.168.0.223:
+  // const url = `http://192.168.0.223:3000/api/rol/by-email?email=${encodeURIComponent(email)}`;
   // Ejemplo para tu IP actual:
   const url = `http://192.168.0.223:3000/api/rol/by-email?email=${encodeURIComponent(email)}`;
 

@@ -11,7 +11,7 @@ app.use(express.json()); // Para JSON en POST
 const config = {
   user: 'rosalio21',
   password: 'rosalio12',
-  server: 'localhost',
+  server: '192.168.0.223',
   database: 'AMEYALII',
   options: {
     encrypt: true,
@@ -1383,6 +1383,6 @@ app.use((err, req, res, next) => {
 
 // ✅ LISTEN
 app.listen(3000,'0.0.0.0', () => {
-  console.log('API corriendo en http://localhost:3000');
+  console.log('API corriendo en http://192.168.0.223:3000');
 });
 
