@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "170922182727",
+    "project_id": "proyectoraven",
+    "storage_bucket": "proyectoraven.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:170922182727:android:354185807ac6169bf70962",
+        "android_client_info": {
+          "package_name": "com.rosalio.proyectofn"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAcPWpbLTuNwmodct3QE0MRAJ_OMqlId6c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
