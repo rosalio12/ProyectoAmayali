@@ -3,19 +3,67 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Button, ActivityI
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
 
 // IPs y Puertos de tus backends
-const SQL_API_BASE = 'http://localhost:3000'; // Tu API de SQL Server
-const MONGO_API_BASE = 'http://localhost:5000'; // Tu API de MongoDB
-const ALIMENTACION_API_BASE = 'http://localhost:5000'; // API para alimentación
+const SQL_API_BASE = 'http://192.168.0.223:3000'; // Tu API de SQL Server
+const MONGO_API_BASE = 'http://192.168.0.223:5000'; // Tu API de MongoDB
+const ALIMENTACION_API_BASE = 'http://192.168.0.223:5000'; // API para alimentación
 
-export default function HomeEnfermeroScreen({ userId }) {
+// --- Componentes de UI refactorizados y con diseño mejorado ---
+const VitalSign = ({ icon, value, unit, label, isDanger }) => (
+  <View style={[styles.vitalSign, isDanger && styles.vitalSignDanger]}>
+    <View style={styles.vitalSignHeader}>
+      <Ionicons name={icon} size={24} color={isDanger ? '#FF5252' : '#7E57C2'} />
+      <Text style={styles.vitalSignLabel}>{label}</Text>
+    </View>
+    <Text style={[styles.vitalSignValue, isDanger && styles.vitalSignValueDanger]}>
+      {value} <Text style={[styles.vitalSignUnit, isDanger && styles.vitalSignUnitDanger]}>{unit}</Text>
+    </Text>
+  </View>
+);
+
+const MedicalDataCard = ({ heartRate, oxygen, temperature, lastUpdate }) => {
+  const isOxygenLow = oxygen && oxygen !== '--' && parseInt(oxygen, 10) < 90;
+  const isHeartRateAbnormal = heartRate && heartRate !== '--' && (parseInt(heartRate, 10) > 160 || parseInt(heartRate, 10) < 100);
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Monitor de Signos Vitales</Text>
+      <View style={styles.vitalSignsContainer}>
+        <VitalSign icon="heart" value={heartRate} unit="lpm" label="Ritmo Cardíaco" isDanger={isHeartRateAbnormal} />
+        <VitalSign icon="pulse" value={oxygen} unit="%" label="Oxígeno" isDanger={isOxygenLow} />
+      </View>
+      <View style={styles.temperatureContainer}>
+        <Ionicons name="thermometer" size={24} color="#7E57C2" />
+        <Text style={styles.temperatureLabel}>Temperatura:</Text>
+        <Text style={styles.temperatureValue}>{temperature}</Text>
+      </View>
+      <Text style={styles.lastUpdate}>Última actualización: {lastUpdate || '--'}</Text>
+    </View>
+  );
+};
+
+const AlertItem = ({ type, message, level }) => {
+  const getIconName = () => ({ oxigenacion: 'warning', corazon: 'heart', error: 'alert-circle', info: 'information-circle' }[type] || 'checkmark-circle');
+  const getColor = () => ({ danger: '#FF5252', warning: '#FFC107', success: '#4CAF50', info: '#2196F3' }[level] || '#4CAF50');
+
+  return (
+    <View style={[styles.alertItem, { backgroundColor: `${getColor()}15` }]}>
+      <Ionicons name={getIconName()} size={20} color={getColor()} />
+      <Text style={[styles.alertText, { color: getColor() }]}>{message}</Text>
+    </View>
+  );
+};
+
+export default function HomeEnfermeroScreen({ userId, navigation }) {
   const [assignedBabies, setAssignedBabies] = useState([]);
   const [selectedBaby, setSelectedBaby] = useState(null);
   const [sensorData, setSensorData] = useState({});
   const [loading, setLoading] = useState(true);
   const [showScanner, setShowScanner] = useState(false);
   const [scanned, setScanned] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false); // Nuevo estado para evitar múltiples procesamientos
   const [permission, requestPermission] = useCameraPermissions();
   const [modalVisible, setModalVisible] = useState(false);
   const [nuevoBebe, setNuevoBebe] = useState({
@@ -48,11 +96,16 @@ export default function HomeEnfermeroScreen({ userId }) {
   const fetchUltimosRegistros = async (idBebe) => {
     try {
       const res = await fetch(`${ALIMENTACION_API_BASE}/registro-alimentacion/ultimo/${idBebe}`);
-      if (!res.ok) return { ultimaComida: null, ultimoMedicamento: null };
+      if (!res.ok) return { ultimaComida: null, tipoAlimento: null, ultimoMedicamento: null, nombreMedicina: null };
       const data = await res.json();
-      return { ultimaComida: data?.ultimaComida || null, ultimoMedicamento: data?.ultimoMedicamento || null };
+      return {
+        ultimaComida: data.ultimaComida || null,
+        tipoAlimento: data.tipoAlimento || null,
+        ultimoMedicamento: data.ultimoMedicamento || null,
+        nombreMedicina: data.nombreMedicina || null
+      };
     } catch {
-      return { ultimaComida: null, ultimoMedicamento: null };
+      return { ultimaComida: null, tipoAlimento: null, ultimoMedicamento: null, nombreMedicina: null };
     }
   };
 
@@ -75,39 +128,49 @@ export default function HomeEnfermeroScreen({ userId }) {
         setLoading(false);
         return;
       }
+
       const babiesWithRegistros = await Promise.all(
         babies.map(async (baby) => {
-          const { ultimaComida, ultimoMedicamento } = await fetchUltimosRegistros(baby.idBebe);
-          return { ...baby, ultimaComida, ultimoMedicamento };
+          const { ultimaComida, tipoAlimento, ultimoMedicamento, nombreMedicina } = await fetchUltimosRegistros(baby.idBebe);
+          return { ...baby, ultimaComida, tipoAlimento, ultimoMedicamento, nombreMedicina };
         })
       );
+
       setAssignedBabies(babiesWithRegistros);
-      // Actualiza el bebé seleccionado si el actual ya no está en la lista o no hay ninguno
+      
+      // Solo actualizar selectedBaby si no hay ninguno seleccionado o si el actual ya no existe
       const currentSelectedBabyStillExists = babiesWithRegistros.some(b => b.idBebe === selectedBaby?.idBebe);
-      if (!currentSelectedBabyStillExists) {
+      if (!selectedBaby || !currentSelectedBabyStillExists) {
         setSelectedBaby(babiesWithRegistros[0]);
       }
-
     } catch (error) {
       console.error('Error fetching babies:', error);
       Alert.alert("Error de Conexión", `No se pudieron cargar los bebés. ${error.message}`);
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, selectedBaby?.idBebe]);
 
   useEffect(() => {
     const fetchSensorData = async () => {
       if (!selectedBaby || !selectedBaby.idCuna) {
-        setSensorData({ heartRate: '--', oxygen: '--', temperature: '--°C', alerts: [{ type: 'info', message: 'Selecciona un bebé con cuna para ver datos.', level: 'info' }], lastUpdate: '--' });
+        setSensorData({
+           heartRate: '--',
+           oxygen: '--',
+           temperature: '--°C',
+           alerts: [{ type: 'info', message: 'Selecciona un bebé con cuna para ver datos.', level: 'info' }],
+           lastUpdate: '--'
+         });
         return;
       }
+
       try {
         const cunaMongoId = `CUNA${String(selectedBaby.idCuna).padStart(3, '0')}`;
         const sensorDataRes = await fetch(`${MONGO_API_BASE}/sensor-data?cunas=${cunaMongoId}&limit=1`);
         if (!sensorDataRes.ok) throw new Error(`Error ${sensorDataRes.status} al obtener datos del sensor.`);
         const jsonSensor = await sensorDataRes.json();
         const latestSensorReading = jsonSensor.data?.[0];
+
         if (latestSensorReading) {
           setSensorData({
             heartRate: latestSensorReading.frecuenciaCardiaca ? `${Math.round(latestSensorReading.frecuenciaCardiaca)}` : '--',
@@ -117,15 +180,28 @@ export default function HomeEnfermeroScreen({ userId }) {
             lastUpdate: new Date(latestSensorReading.timestamp).toLocaleTimeString()
           });
         } else {
-          setSensorData({ heartRate: '--', oxygen: '--', temperature: '--°C', alerts: [{ type: 'info', message: 'No hay datos recientes.', level: 'info' }], lastUpdate: '--' });
+          setSensorData({
+             heartRate: '--',
+             oxygen: '--',
+             temperature: '--°C',
+             alerts: [{ type: 'info', message: 'No hay datos recientes.', level: 'info' }],
+             lastUpdate: '--'
+           });
         }
       } catch (error) {
         console.error('Error fetching sensor data:', error);
-        setSensorData({ heartRate: '--', oxygen: '--', temperature: '--°C', alerts: [{ type: 'error', message: 'Error al cargar datos.', level: 'danger' }], lastUpdate: '--' });
+        setSensorData({
+           heartRate: '--',
+           oxygen: '--',
+           temperature: '--°C',
+           alerts: [{ type: 'error', message: 'Error al cargar datos.', level: 'danger' }],
+           lastUpdate: '--'
+         });
       }
     };
+
     fetchSensorData();
-    const interval = setInterval(fetchSensorData, 6000);
+    const interval = setInterval(fetchSensorData, 60000);
     return () => clearInterval(interval);
   }, [selectedBaby, getAlerts]);
 
@@ -133,25 +209,57 @@ export default function HomeEnfermeroScreen({ userId }) {
     fetchData();
   }, [fetchData]);
 
-  // --- FUNCIÓN ACTUALIZADA PARA ASIGNAR CUNA ---
+  // CAMBIO PRINCIPAL: Simplificar useFocusEffect para evitar conflictos
+  useFocusEffect(
+    useCallback(() => {
+      // Solo actualizar los registros de cuidados del bebé seleccionado actual
+      const refreshCuidados = async () => {
+        if (selectedBaby) {
+          const { ultimaComida, tipoAlimento, ultimoMedicamento, nombreMedicina } = await fetchUltimosRegistros(selectedBaby.idBebe);
+          
+          // Actualizar solo los datos de cuidados sin cambiar la selección
+          setAssignedBabies(prev =>
+            prev.map(b =>
+              b.idBebe === selectedBaby.idBebe
+                ? { ...b, ultimaComida, tipoAlimento, ultimoMedicamento, nombreMedicina }
+                : b
+            )
+          );
+          
+          setSelectedBaby(prev =>
+            prev && prev.idBebe === selectedBaby.idBebe
+              ? { ...prev, ultimaComida, tipoAlimento, ultimoMedicamento, nombreMedicina }
+              : prev
+          );
+        }
+      };
+      
+      refreshCuidados();
+    }, [selectedBaby?.idBebe])
+  );
+
+  // Función mejorada para manejar el escaneo de códigos QR
   const handleBarCodeScanned = async ({ type, data }) => {
+    // Evitar múltiples procesamientos
+    if (scanned || isProcessing) {
+      return;
+    }
+
     setScanned(true);
+    setIsProcessing(true);
     setShowScanner(false);
 
     if (!selectedBaby || !selectedBaby.idBebe) {
       Alert.alert("Error", "Por favor, selecciona un bebé antes de escanear una cuna.");
-      setTimeout(() => setScanned(false), 1000);
+      resetScannerState();
       return;
     }
 
     try {
-      // Extracción robusta del idCuna desde el QR
       let cunaId;
-      // Si el QR es solo un número
       if (/^\d+$/.test(data)) {
         cunaId = parseInt(data, 10);
       } else {
-        // Si el QR es una URL tipo .../cuna/35
         const match = data.match(/(\d+)$/);
         cunaId = match ? parseInt(match[1], 10) : null;
       }
@@ -160,11 +268,16 @@ export default function HomeEnfermeroScreen({ userId }) {
         throw new Error("El código QR no contiene un ID de cuna válido.");
       }
 
+      // Mostrar confirmación una sola vez
       Alert.alert(
         "Confirmar Asignación",
         `¿Asignar la Cuna #${cunaId} al bebé ${selectedBaby.Nombre} ${selectedBaby.ApellidoPaterno}?`,
         [
-          { text: "Cancelar", style: "cancel", onPress: () => setTimeout(() => setScanned(false), 500) },
+          { 
+            text: "Cancelar", 
+            style: "cancel", 
+            onPress: () => resetScannerState()
+          },
           {
             text: "Asignar",
             onPress: async () => {
@@ -179,18 +292,18 @@ export default function HomeEnfermeroScreen({ userId }) {
                     idUsuario: userId
                   })
                 });
-                const responseJson = await response.json();
 
+                const responseJson = await response.json();
                 if (!response.ok) {
                   throw new Error(responseJson.message || `Error del servidor: ${response.status}`);
                 }
 
                 Alert.alert("Éxito", responseJson.message);
-                fetchData();
+                await fetchData(); // Actualizar datos después de la asignación
               } catch (assignError) {
                 Alert.alert("Error de Asignación", assignError.message);
               } finally {
-                setTimeout(() => setScanned(false), 1000);
+                resetScannerState();
               }
             }
           },
@@ -198,24 +311,35 @@ export default function HomeEnfermeroScreen({ userId }) {
       );
     } catch (error) {
       Alert.alert("Error", `No se pudo procesar el código QR: ${error.message}`);
-      setTimeout(() => setScanned(false), 1000);
+      resetScannerState();
     }
   };
 
+  // Función para resetear el estado del escáner
+  const resetScannerState = () => {
+    setTimeout(() => {
+      setScanned(false);
+      setIsProcessing(false);
+    }, 1000);
+  };
+
+  // Función mejorada para abrir el escáner
+  const openScanner = () => {
+    setScanned(false);
+    setIsProcessing(false);
+    setShowScanner(true);
+  };
+
   const handleAgregarBebe = async () => {
-    console.log('[UI] Abriendo modal para agregar bebé');
     setModalVisible(true);
   };
 
   const handleGuardarBebe = async () => {
     try {
-      console.log('[UI] Enviando datos del nuevo bebé:', nuevoBebe);
       const resp = await fetch(`${SQL_API_BASE}/api/bebes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...nuevoBebe
-        })
+        body: JSON.stringify({ ...nuevoBebe })
       });
       if (!resp.ok) {
         const txt = await resp.text();
@@ -232,20 +356,21 @@ export default function HomeEnfermeroScreen({ userId }) {
         fechaNacimiento: '',
         alergias: ''
       });
-      // Recargar la lista de bebés
-      fetchData();
-      // Mostrar la cuna asignada si viene en la respuesta
+      
+      await fetchData();
+      
       let cunaMsg = '';
       if (data && data.idCuna) {
         cunaMsg = `\nAsignado a la cuna #${data.idCuna}.`;
       }
       Alert.alert('Éxito', `Bebé creado y cuna asignada automáticamente.${cunaMsg}`);
     } catch (err) {
-      console.error('[UI] Error al crear bebé:', err);
+      console.error('Error al crear bebé:', err);
       Alert.alert('Error', err.message);
     }
   };
 
+  // --- Renderizado de UI ---
   if (loading) {
     return <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#7E57C2" /><Text style={styles.loadingText}>Cargando...</Text></View>;
   }
@@ -272,9 +397,16 @@ export default function HomeEnfermeroScreen({ userId }) {
               renderItem={({ item }) => {
                 const isSelected = selectedBaby?.idBebe === item.idBebe;
                 return (
-                  <TouchableOpacity style={[styles.babyListItem, isSelected && styles.selectedBabyListItem]} onPress={() => setSelectedBaby(item)}>
-                    <Text style={[styles.babyListItemText, isSelected && styles.selectedBabyListItemText]}>{item.Nombre} {item.ApellidoPaterno || ''}</Text>
-                    <Text style={[styles.babyListItemSubText, isSelected && styles.selectedBabyListItemSubText]}>{item.idCuna ? `Cuna: #${item.idCuna}` : 'Sin Cuna'}</Text>
+                  <TouchableOpacity
+                    style={[styles.babyListItem, isSelected && styles.selectedBabyListItem]}
+                    onPress={() => setSelectedBaby(item)}
+                  >
+                    <Text style={[styles.babyListItemText, isSelected && styles.selectedBabyListItemText]}>
+                      {item.Nombre} {item.ApellidoPaterno || ''}
+                    </Text>
+                    <Text style={[styles.babyListItemSubText, isSelected && styles.selectedBabyListItemSubText]}>
+                      {item.idCuna ? `Cuna: #${item.idCuna}` : 'Sin Cuna'}
+                    </Text>
                   </TouchableOpacity>
                 );
               }}
@@ -282,6 +414,7 @@ export default function HomeEnfermeroScreen({ userId }) {
             />
           ) : <Text style={styles.noBabyMessage}>No tienes bebés asignados.</Text>}
         </View>
+
         <View style={styles.divider} />
 
         {selectedBaby ? (
@@ -289,8 +422,22 @@ export default function HomeEnfermeroScreen({ userId }) {
             <MedicalDataCard {...sensorData} />
             <View style={styles.cuidadosCard}>
               <Text style={styles.cuidadosTitle}>Cuidados Recientes</Text>
-              <Text style={styles.cuidadosLabel}>Última comida: <Text style={styles.cuidadosBold}>{selectedBaby.ultimaComida ? new Date(selectedBaby.ultimaComida).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}</Text></Text>
-              <Text style={styles.cuidadosLabel}>Último med.: <Text style={styles.cuidadosBold}>{selectedBaby.ultimoMedicamento ? new Date(selectedBaby.ultimoMedicamento).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}</Text></Text>
+              <Text style={styles.cuidadosLabel}>
+                Última comida: <Text style={styles.cuidadosBold}>
+                  {selectedBaby.ultimaComida ? new Date(selectedBaby.ultimaComida).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                </Text>
+                {selectedBaby.tipoAlimento ? (
+                  <Text style={styles.cuidadosExtra}> ({selectedBaby.tipoAlimento})</Text>
+                ) : null}
+              </Text>
+              <Text style={styles.cuidadosLabel}>
+                Último med.: <Text style={styles.cuidadosBold}>
+                  {selectedBaby.ultimoMedicamento ? new Date(selectedBaby.ultimoMedicamento).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                </Text>
+                {selectedBaby.nombreMedicina ? (
+                  <Text style={styles.cuidadosExtra}> ({selectedBaby.nombreMedicina})</Text>
+                ) : null}
+              </Text>
             </View>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Estado del Sistema</Text>
@@ -307,9 +454,14 @@ export default function HomeEnfermeroScreen({ userId }) {
           <Ionicons name="add" size={20} color="white" style={{ marginLeft: -6, marginTop: -8 }} />
         </View>
       </TouchableOpacity>
-      {/* Botón flotante QR (derecha) */}
-      <TouchableOpacity style={styles.fabRight} onPress={() => setShowScanner(true)}>
-        <View style={styles.fabButton}>
+
+      {/* Botón flotante QR (derecha) - Mejorado */}
+      <TouchableOpacity 
+        style={styles.fabRight} 
+        onPress={openScanner}
+        disabled={isProcessing}
+      >
+        <View style={[styles.fabButton, isProcessing && { opacity: 0.6 }]}>
           <Ionicons name="qr-code-outline" size={30} color="white" />
         </View>
       </TouchableOpacity>
@@ -323,12 +475,21 @@ export default function HomeEnfermeroScreen({ userId }) {
             onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
           >
             <View style={styles.overlay}>
-              <TouchableOpacity style={styles.backButton} onPress={() => setShowScanner(false)}>
+              <TouchableOpacity 
+                style={styles.backButton} 
+                onPress={() => {
+                  setShowScanner(false);
+                  resetScannerState();
+                }}
+              >
                 <Ionicons name="arrow-back" size={24} color="white" />
                 <Text style={styles.backButtonText}>Volver</Text>
               </TouchableOpacity>
               <View style={styles.scanFrame} />
               <Text style={styles.scanText}>Escanee el código QR de la cuna</Text>
+              {scanned && (
+                <Text style={styles.processingText}>Procesando...</Text>
+              )}
             </View>
           </CameraView>
         </View>
@@ -344,8 +505,6 @@ export default function HomeEnfermeroScreen({ userId }) {
               <TextInput placeholder="Apellido Materno" value={nuevoBebe.apellidoMaterno} onChangeText={t => setNuevoBebe(prev => ({ ...prev, apellidoMaterno: t }))} style={styles.input} />
               <TextInput placeholder="Sexo" value={nuevoBebe.sexo} onChangeText={t => setNuevoBebe(prev => ({ ...prev, sexo: t }))} style={styles.input} />
               <TextInput placeholder="Peso (kg)" value={nuevoBebe.peso} onChangeText={t => setNuevoBebe(prev => ({ ...prev, peso: t }))} keyboardType="numeric" style={styles.input} />
-              
-              {/* Selector de fecha tipo calendario */}
               <TouchableOpacity
                 style={[styles.input, { justifyContent: 'center', height: 48 }]}
                 onPress={() => setShowDatePicker(true)}
@@ -374,7 +533,6 @@ export default function HomeEnfermeroScreen({ userId }) {
                   }}
                 />
               )}
-
               <TextInput placeholder="Alergias" value={nuevoBebe.alergias} onChangeText={t => setNuevoBebe(prev => ({ ...prev, alergias: t }))} style={styles.input} />
             </View>
             <View style={styles.modalButtonRow}>
@@ -392,136 +550,53 @@ export default function HomeEnfermeroScreen({ userId }) {
   );
 }
 
-// --- Componentes de UI (sin cambios) ---
-const VitalSign = ({ icon, value, unit, label }) => (
-  <View style={styles.vitalSign}><View style={styles.vitalSignHeader}><Ionicons name={icon} size={24} color="#7E57C2" /><Text style={styles.vitalSignLabel}>{label}</Text></View><Text style={styles.vitalSignValue}>{value} <Text style={styles.vitalSignUnit}>{unit}</Text></Text></View>
-);
-const MedicalDataCard = ({ heartRate, oxygen, temperature, lastUpdate }) => (
-  <View style={styles.card}><Text style={styles.cardTitle}>Monitor de Signos Vitales</Text><View style={styles.vitalSignsContainer}><VitalSign icon="heart" value={heartRate} unit="lpm" label="Ritmo Cardíaco" /><VitalSign icon="pulse" value={oxygen} unit="%" label="Oxígeno" /></View><View style={styles.temperatureContainer}><Ionicons name="thermometer" size={24} color="#7E57C2" /><Text style={styles.temperatureLabel}>Temperatura:</Text><Text style={styles.temperatureValue}>{temperature}</Text></View><Text style={styles.lastUpdate}>Última actualización: {lastUpdate || new Date().toLocaleTimeString()}</Text></View>
-);
-const AlertItem = ({ type, message, level }) => {
-  const getIconName = () => ({ oxigenacion: 'warning', corazon: 'heart', error: 'alert-circle', info: 'information-circle' }[type] || 'checkmark-circle');
-  const getColor = () => ({ danger: '#FF5252', warning: '#FFC107', info: '#2196F3' }[level] || '#4CAF50');
-  return <View style={[styles.alertItem, { backgroundColor: `${getColor()}20` }]}><Ionicons name={getIconName()} size={20} color={getColor()} /><Text style={[styles.alertText, { color: getColor() }]}>{message}</Text></View>;
-};
-
-// --- Estilos (sin cambios) ---
+// --- Estilos actualizados y mejor organizados ---
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5', padding: 16 },
-  header: { marginBottom: 20, padding: 20, backgroundColor: '#7E57C2', borderRadius: 12 },
-  headerTitle: { fontSize: 24, fontWeight: 'bold', color: 'white', textAlign: 'center' },
-  babyName: { fontSize: 18, color: 'white', marginTop: 8, textAlign: 'center' },
-  card: { backgroundColor: 'white', borderRadius: 12, padding: 16, marginBottom: 16, elevation: 3 },
-  cardTitle: { fontSize: 18, fontWeight: '600', color: '#4A2C8E', marginBottom: 16 },
-  vitalSignsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
-  vitalSign: { flex: 1, padding: 12, borderRadius: 8, backgroundColor: '#F9F5FF', marginHorizontal: 4 },
-  vitalSignHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  vitalSignLabel: { marginLeft: 8, fontSize: 14, color: '#616161' },
-  vitalSignValue: { fontSize: 24, fontWeight: 'bold', color: '#4A2C8E', textAlign: 'center' },
-  vitalSignUnit: { fontSize: 16, fontWeight: 'normal', color: '#757575' },
-  temperatureContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 10,
-    padding: 12,
-    backgroundColor: '#F9F5FF',
-    borderRadius: 8,
-  },
-  temperatureLabel: { marginLeft: 8, fontSize: 16, color: '#616161', fontWeight: 'bold' },
-  temperatureValue: { marginLeft: 5, fontSize: 20, fontWeight: 'bold', color: '#4A2C8E' },
-  lastUpdate: { fontSize: 12, color: '#9E9E9E', textAlign: 'right', marginTop: 8 },
-  alertItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 8, marginBottom: 8 },
-  alertText: { marginLeft: 10, fontSize: 14, fontWeight: '500' },
-  addButton: {
-    backgroundColor: '#7E57C2',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    marginBottom: 10,
-  },
-  addBabyButton: {
-    backgroundColor: '#4A2C8E',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 5,
-    flexDirection: 'row',
-  },
-  fabContainer: {
-    position: 'absolute',
-    left: 20, // Cambiado de right a left
-    bottom: 20,
-    flexDirection: 'column',
-    alignItems: 'center',
-    zIndex: 10,
-  },
-  fabLeft: {
-    position: 'absolute',
-    left: 20,
-    bottom: 30,
-    zIndex: 10,
-  },
-  fabRight: {
-    position: 'absolute',
-    right: 20,
-    bottom: 30,
-    zIndex: 10,
-  },
-  fabButton: {
-    backgroundColor: '#7E57C2',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexDirection: 'row',
-    elevation: 6,
-    shadowColor: '#7E57C2',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-  },
-  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)' },
-  backButton: {
-    position: 'absolute', top: 50, left: 20,
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20
-  },
-  backButtonText: { color: 'white', marginLeft: 5, fontWeight: '500' },
-  scanFrame: { width: 250, height: 250, borderWidth: 2, borderColor: 'white', borderRadius: 10 },
-  scanText: {
-    fontSize: 16, color: 'white', marginTop: 20, textAlign: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)', padding: 10, borderRadius: 5
-  },
-  message: { textAlign: 'center', paddingBottom: 10, margin: 20, color: '#7E57C2' },
-  loadingContainer: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     backgroundColor: '#F5F5F5',
+    padding: 16,
   },
-  loadingText: { marginTop: 10, fontSize: 16, color: '#7E57C2' },
-  permissionContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  header: {
+    marginBottom: 20,
+    paddingVertical: 24,
+    backgroundColor: '#7E57C2',
+    borderRadius: 12,
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
   },
-  noBabyMessage: {
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
     textAlign: 'center',
-    fontSize: 16,
-    color: '#666',
-    marginTop: 20,
-    paddingHorizontal: 20,
-    lineHeight: 24,
   },
+  babyName: {
+    fontSize: 18,
+    color: 'white',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#DCDCDC',
+    marginVertical: 15,
+  },
+  // --- Tarjetas generales ---
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#4A2C8E',
+    marginBottom: 16,
+  },
+  // --- Contenedor de bebés horizontal ---
   babiesListContainer: {
     marginBottom: 20,
   },
@@ -530,6 +605,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#4A2C8E',
     marginBottom: 10,
+    paddingHorizontal: 4,
   },
   babyListItem: {
     backgroundColor: 'white',
@@ -537,7 +613,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: 12,
     marginRight: 10,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E0E0E0',
     justifyContent: 'center',
     minHeight: 60,
@@ -565,11 +641,131 @@ const styles = StyleSheet.create({
   selectedBabyListItemSubText: {
     color: '#EADDFF',
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#DCDCDC',
-    marginVertical: 15,
+  noBabyMessage: {
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#666',
+    marginTop: 20,
+    paddingHorizontal: 20,
+    lineHeight: 24,
   },
+  // --- Signos Vitales ---
+  vitalSignsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  vitalSign: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: '#F9F5FF',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#EFEAFF',
+  },
+  vitalSignDanger: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#EF9A9A',
+  },
+  vitalSignHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  vitalSignLabel: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#616161',
+  },
+  vitalSignValue: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#4A2C8E',
+    textAlign: 'center',
+  },
+  vitalSignValueDanger: {
+    color: '#FF5252',
+  },
+  vitalSignUnit: {
+    fontSize: 18,
+    fontWeight: 'normal',
+    color: '#757575',
+  },
+  vitalSignUnitDanger: {
+    color: '#FF5252',
+  },
+  // --- Temperatura ---
+  temperatureContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#F9F5FF',
+    borderRadius: 12,
+  },
+  temperatureLabel: {
+    marginLeft: 10,
+    fontSize: 16,
+    color: '#616161',
+    fontWeight: 'bold',
+  },
+  temperatureValue: {
+    marginLeft: 5,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#4A2C8E',
+  },
+  lastUpdate: {
+    fontSize: 12,
+    color: '#9E9E9E',
+    textAlign: 'right',
+    marginTop: 12,
+  },
+  // --- Alertas ---
+  alertItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  alertText: {
+    marginLeft: 10,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  // --- Cuidados Recientes ---
+  cuidadosCard: {
+    backgroundColor: 'white',
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 16,
+    elevation: 2,
+  },
+  cuidadosTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4A2C8E',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  cuidadosLabel: {
+    fontSize: 15,
+    color: '#333',
+    marginBottom: 8,
+    lineHeight: 24,
+  },
+  cuidadosBold: {
+    fontWeight: 'bold',
+    color: '#4A2C8E',
+  },
+  cuidadosExtra: {
+    color: '#7E57C2',
+    fontWeight: '500',
+    fontSize: 14,
+  },
+  // --- Tarjeta de Información vacía ---
   infoCard: {
     backgroundColor: 'white',
     borderRadius: 12,
@@ -586,36 +782,112 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
   },
-  cuidadosCard: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 2,
+  // --- Botones flotantes (FAB) ---
+  fabLeft: {
+    position: 'absolute',
+    left: 20,
+    bottom: 30,
+    zIndex: 10,
   },
-  cuidadosTitle: {
+  fabRight: {
+    position: 'absolute',
+    right: 20,
+    bottom: 30,
+    zIndex: 10,
+  },
+  fabButton: {
+    backgroundColor: '#7E57C2',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    elevation: 6,
+    shadowColor: '#7E57C2',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  // --- Escáner de código QR ---
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.7)',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 50,
+    left: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  backButtonText: {
+    color: 'white',
+    marginLeft: 5,
+    fontWeight: '500',
+  },
+  scanFrame: {
+    width: 250,
+    height: 250,
+    borderWidth: 3,
+    borderColor: '#7E57C2',
+    borderRadius: 10,
+  },
+  scanText: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4A2C8E',
-    marginBottom: 10,
+    color: 'white',
+    marginTop: 20,
     textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 10,
+    borderRadius: 5,
   },
-  cuidadosLabel: {
-    marginLeft: 8,
-    fontSize: 15,
-    color: '#333',
-    marginBottom: 8,
+  processingText: {
+    fontSize: 14,
+    color: '#FFC107',
+    marginTop: 10,
+    textAlign: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 8,
+    borderRadius: 5,
   },
-  cuidadosBold: {
-    fontWeight: 'bold',
-    color: '#4A2C8E',
+  // --- Pantalla de carga y permisos ---
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#7E57C2',
+  },
+  permissionContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#F5F5F5',
+  },
+  message: {
+    textAlign: 'center',
+    paddingBottom: 10,
+    margin: 20,
+    color: '#7E57C2',
   },
   // --- Modal Mejorado ---
   modalOverlay: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   modalForm: {
     backgroundColor: '#fff',
@@ -623,7 +895,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: '92%',
     elevation: 8,
-    shadowColor: '#7E57C2',
+    shadowColor: '#4A2C8E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
     shadowRadius: 8,
@@ -639,7 +911,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
   input: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#E0E0E0',
     borderRadius: 10,
     padding: 12,
@@ -655,13 +927,13 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   modalButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 22,
-    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 10,
     alignItems: 'center',
   },
   cancelButton: {
-    backgroundColor: '#888',
+    backgroundColor: '#BDBDBD',
   },
   saveButton: {
     backgroundColor: '#4A2C8E',

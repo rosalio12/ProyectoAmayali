@@ -1,35 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, Dimensions, TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert, Platform } from 'react-native';
+import { 
+    StyleSheet, 
+    Text, 
+    View, 
+    ScrollView, 
+    Dimensions, 
+    TouchableOpacity, 
+    ActivityIndicator, 
+    Modal, 
+    TextInput, 
+    Alert, 
+    Platform,
+    StatusBar
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-const screenWidth = Dimensions.get('window').width;
-const MONGO_API_BASE = 'http://localhost:5000'; // Tu API para MongoDB
-const API_URL = 'http://localhost:3000'; // Tu API principal para SQL
+// --- Color Palette ---
+const colors = {
+    primaryDark: '#4C1D95',
+    primary: '#6D28D9',
+    primaryLight: '#EDE9FE',
+    background: '#F5F3FF',
+    card: '#FFFFFF',
+    textPrimary: '#1E293B',
+    textSecondary: '#475569',
+    textMuted: '#64748B',
+    border: '#E0E7FF',
+    danger: '#DC2626',
+    success: '#16A34A',
+};
 
-// --- Componentes Reutilizables ---
+// --- API Configuration ---
+const MONGO_API_BASE = 'http://192.168.0.223:5000'; // Your MongoDB API
+const API_URL = 'http://192.168.0.223:3000'; // Your main SQL API
 
-function Dato({ icon, label, value, color }) {
+// --- Reusable Components ---
+
+function Dato({ icon, label, value, color, unit = '' }) {
   return (
-    <View style={styles.dato}>
-      <Ionicons name={icon} size={22} color={color} style={{ marginRight: 10 }} />
-      <Text style={styles.label}>{label}:</Text>
-      <Text style={styles.value}>{value}</Text>
+    <View style={styles.datoRow}>
+      <View style={styles.datoLabelContainer}>
+        <Ionicons name={icon} size={22} color={color} style={styles.datoIcon} />
+        <Text style={styles.datoLabel}>{label}</Text>
+      </View>
+      <Text style={styles.datoValue}>{value} <Text style={styles.datoUnit}>{unit}</Text></Text>
     </View>
   );
 }
 
 function MiniSensor({ icon, label, value, color }) {
-  return (
-    <View style={styles.miniSensor}>
-      <Ionicons name={icon} size={18} color={color} />
-      <Text style={styles.miniLabel}>{label}:</Text>
-      <Text style={styles.miniValue}>{value}</Text>
-    </View>
-  );
+    return (
+      <View style={styles.miniSensor}>
+        <Ionicons name={icon} size={18} color={color} />
+        <Text style={styles.miniValue}>{value}</Text>
+        <Text style={styles.miniLabel}>{label}</Text>
+      </View>
+    );
 }
-
-function ConfirmationModal({ isVisible, title, message, onConfirm, onCancel }) {
+  
+function ConfirmationModal({ isVisible, title, message, onConfirm, onCancel, confirmText = "Confirmar", cancelText = "Cancelar" }) {
   if (!isVisible) return null;
 
   return (
@@ -41,14 +72,15 @@ function ConfirmationModal({ isVisible, title, message, onConfirm, onCancel }) {
     >
       <View style={modalStyles.overlay}>
         <View style={modalStyles.container}>
+          <Ionicons name="alert-circle-outline" size={50} color={colors.danger} style={{ marginBottom: 15 }} />
           <Text style={modalStyles.title}>{title}</Text>
           <Text style={modalStyles.message}>{message}</Text>
           <View style={modalStyles.buttonContainer}>
-            <TouchableOpacity style={modalStyles.cancelButton} onPress={onCancel}>
-              <Text style={modalStyles.buttonText}>Cancelar</Text>
+            <TouchableOpacity style={[modalStyles.button, modalStyles.cancelButton]} onPress={onCancel}>
+              <Text style={[modalStyles.buttonText, modalStyles.cancelButtonText]}>{cancelText}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={modalStyles.confirmButton} onPress={onConfirm}>
-              <Text style={modalStyles.buttonText}>Confirmar</Text>
+            <TouchableOpacity style={[modalStyles.button, modalStyles.confirmButton]} onPress={onConfirm}>
+              <Text style={[modalStyles.buttonText, modalStyles.confirmButtonText]}>{confirmText}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -57,545 +89,484 @@ function ConfirmationModal({ isVisible, title, message, onConfirm, onCancel }) {
   );
 }
 
-// --- Componente Principal ---
+// --- Main Component ---
 export default function CunasEnfermeroScreen({ userId }) {
-  const [vista, setVista] = useState('grid');
-  const [cunaSeleccionada, setCunaSeleccionada] = useState(null);
-  const [cunas, setCunas] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [cunaToConfirm, setCunaToConfirm] = useState(null);
-  const [sensorData, setSensorData] = useState({});
-  const [weightData, setWeightData] = useState({}); // NUEVO: Estado para el peso
-  const [modalProblema, setModalProblema] = useState(false);
-  const [cunaProblema, setCunaProblema] = useState('');
-  const [descripcionProblema, setDescripcionProblema] = useState('');
-  const [enviandoProblema, setEnviandoProblema] = useState(false);
+    const [vista, setVista] = useState('grid');
+    const [cunaSeleccionada, setCunaSeleccionada] = useState(null);
+    const [cunas, setCunas] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [isModalVisible, setIsModalVisible] = useState(false);
+    const [cunaToConfirm, setCunaToConfirm] = useState(null);
+    const [sensorData, setSensorData] = useState({});
+    const [weightData, setWeightData] = useState({});
+    const [modalProblema, setModalProblema] = useState(false);
+    const [cunaProblema, setCunaProblema] = useState('');
+    const [descripcionProblema, setDescripcionProblema] = useState('');
+    const [enviandoProblema, setEnviandoProblema] = useState(false);
 
-  // --- Funciones de Fetching de Datos ---
-  const fetchCunas = async () => {
-    if (!userId) {
-        setLoading(false);
-        return;
-    };
-    
-    setLoading(true);
-    try {
-      const response = await fetch(`${API_URL}/api/cunas/enfermero/${userId}`);
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Error HTTP! estado: ${response.status}, mensaje: ${errorText}`);
-      }
-      const data = await response.json();
-      const cunasFormateadas = data.map(cuna => ({
-        idCuna: cuna.idCuna,
-        nombre: cuna.nombre,
-        status: cuna.Estado ? 'Ocupada' : 'Libre',
-        fechaAsig: cuna.FechaAsig,
-        nombreCuarto: cuna.nombreCuarto,
-        nombreHospital: cuna.nombreHospital,
-      }));
-      setCunas(cunasFormateadas);
-    } catch (error) {
-      console.error("[fetchCunas] Error al obtener cunas:", error);
-      Alert.alert("Error", "No se pudieron cargar las cunas. Por favor, inténtalo de nuevo.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchCunas();
-  }, [userId]);
-
-  // --- HOOK MEJORADO PARA SENSORES Y PESO ---
-  useEffect(() => {
-    if (!cunas.length) return;
-    let isMounted = true;
-
-    const fetchAllData = async () => {
-      // --- 1. Obtener datos de sensores (MongoDB) ---
-      const cunaMongoIds = cunas.map(c => `CUNA${String(c.idCuna).padStart(3, '0')}`).join(',');
-      
-      try {
-        const sensorRes = await fetch(`${MONGO_API_BASE}/sensor-data?cunas=${cunaMongoIds}&limit=${cunas.length}`);
-        if(sensorRes.ok) {
-            const sensorJson = await sensorRes.json();
-            if (isMounted && sensorJson.data) {
-                const mappedSensorData = sensorJson.data.reduce((acc, reading) => {
-                    const cunaIdNumber = parseInt(reading.cunaId.replace('CUNA', ''), 10);
-                    if (!acc[cunaIdNumber]) { // Guardar solo el más reciente
-                        acc[cunaIdNumber] = reading;
-                    }
-                    return acc;
-                }, {});
-                setSensorData(mappedSensorData);
-            }
+    // --- Data Fetching ---
+    const fetchCunas = async () => {
+        if (!userId) {
+            setLoading(false);
+            return;
         }
-      } catch(e) {
-          console.error("Error fetching sensor data from MongoDB:", e);
-      }
-
-      // --- 2. Obtener datos de peso (SQL) ---
-      try {
-        const weightPromises = cunas.map(cuna =>
-          fetch(`${API_URL}/api/bebe/peso/${cuna.idCuna}`).then(res => res.ok ? res.json() : null)
-        );
-        const weightResults = await Promise.all(weightPromises);
         
-        if (isMounted) {
-          const mappedWeightData = {};
-          weightResults.forEach((result, index) => {
-            if (result && result.success) {
-              const cunaId = cunas[index].idCuna;
-              mappedWeightData[cunaId] = result.peso;
+        setLoading(true);
+        try {
+            const response = await fetch(`${API_URL}/api/cunas/enfermero/${userId}`);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Error HTTP! estado: ${response.status}, mensaje: ${errorText}`);
             }
-          });
-          setWeightData(mappedWeightData);
+            const data = await response.json();
+            const cunasFormateadas = data.map(cuna => ({
+                idCuna: cuna.idCuna,
+                nombre: cuna.nombre,
+                status: cuna.Estado ? 'Ocupada' : 'Libre',
+                fechaAsig: cuna.FechaAsig,
+                nombreCuarto: cuna.nombreCuarto,
+                nombreHospital: cuna.nombreHospital,
+            }));
+            setCunas(cunasFormateadas);
+        } catch (error) {
+            console.error("[fetchCunas] Error al obtener cunas:", error);
+            Alert.alert("Error", "No se pudieron cargar las cunas. Por favor, inténtalo de nuevo.");
+        } finally {
+            setLoading(false);
         }
-      } catch (e) {
-        console.error("Error fetching weight data from SQL:", e);
-      }
     };
 
-    fetchAllData();
-    const interval = setInterval(fetchAllData, 6000);
+    useEffect(() => {
+        fetchCunas();
+    }, [userId]);
 
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
+    // --- Sensor and Weight Data Hook ---
+    useEffect(() => {
+        if (!cunas.length) return;
+        let isMounted = true;
+
+        const fetchAllData = async () => {
+            const cunaMongoIds = cunas.map(c => `CUNA${String(c.idCuna).padStart(3, '0')}`).join(',');
+            
+            try {
+                const sensorRes = await fetch(`${MONGO_API_BASE}/sensor-data?cunas=${cunaMongoIds}&limit=${cunas.length}`);
+                if(sensorRes.ok) {
+                    const sensorJson = await sensorRes.json();
+                    if (isMounted && sensorJson.data) {
+                        const mappedSensorData = sensorJson.data.reduce((acc, reading) => {
+                            const cunaIdNumber = parseInt(reading.cunaId.replace('CUNA', ''), 10);
+                            if (!acc[cunaIdNumber]) {
+                                acc[cunaIdNumber] = reading;
+                            }
+                            return acc;
+                        }, {});
+                        setSensorData(mappedSensorData);
+                    }
+                }
+            } catch(e) {
+                console.error("Error fetching sensor data from MongoDB:", e);
+            }
+
+            try {
+                const weightPromises = cunas.map(cuna =>
+                    fetch(`${API_URL}/api/bebe/peso/${cuna.idCuna}`).then(res => res.ok ? res.json() : null)
+                );
+                const weightResults = await Promise.all(weightPromises);
+                
+                if (isMounted) {
+                    const mappedWeightData = {};
+                    weightResults.forEach((result, index) => {
+                        if (result && result.success) {
+                            const cunaId = cunas[index].idCuna;
+                            mappedWeightData[cunaId] = result.peso;
+                        }
+                    });
+                    setWeightData(mappedWeightData);
+                }
+            } catch (e) {
+                console.error("Error fetching weight data from SQL:", e);
+            }
+        };
+
+        fetchAllData();
+        const interval = setInterval(fetchAllData, 6000);
+
+        return () => {
+            isMounted = false;
+            clearInterval(interval);
+        };
+    }, [cunas]);
+
+    // --- Logic and Navigation ---
+    const getCunaSensorData = (cunaId) => sensorData[cunaId] || null;
+    const getCunaWeight = (cunaId) => weightData[cunaId] || '---';
+
+    const handleDarAlta = (cunaADarDeAlta) => {
+        setCunaToConfirm(cunaADarDeAlta);
+        setIsModalVisible(true);
     };
-  }, [cunas]);
 
-  // --- Funciones de Lógica y Navegación ---
-  const getCunaSensorData = (cunaId) => sensorData[cunaId] || null;
-  const getCunaWeight = (cunaId) => weightData[cunaId] || '---';
+    const confirmDarAlta = async () => {
+        if (!cunaToConfirm) return;
 
-  const handleDarAlta = (cunaADarDeAlta) => {
-    setCunaToConfirm(cunaADarDeAlta);
-    setIsModalVisible(true);
-  };
+        setIsModalVisible(false);
+        setLoading(true);
 
-  const confirmDarAlta = async () => {
-    if (!cunaToConfirm) return;
+        try {
+            const response = await fetch(`${API_URL}/api/cunas/dar-de-alta/${cunaToConfirm.idCuna}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+            });
 
-    setIsModalVisible(false);
-    setLoading(true);
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Error en la respuesta del servidor');
+            }
 
-    try {
-      const response = await fetch(`${API_URL}/api/cunas/dar-de-alta/${cunaToConfirm.idCuna}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-      });
+            const result = await response.json();
+            Alert.alert("Éxito", result.message || "Alta médica completada correctamente.");
+            
+            await fetchCunas();
+            volverAListado();
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Error en la respuesta del servidor');
-      }
+        } catch (error) {
+            console.error("[Frontend] Error al dar de alta:", error);
+            Alert.alert("Error", "No se pudo completar el alta médica");
+        } finally {
+            setLoading(false);
+            setCunaToConfirm(null);
+        }
+    };
 
-      const result = await response.json();
-      Alert.alert("Éxito", result.message || "Alta médica completada correctamente.");
-      
-      await fetchCunas();
-      volverAListado();
+    const cancelDarAlta = () => {
+        setIsModalVisible(false);
+        setCunaToConfirm(null);
+    };
 
-    } catch (error) {
-      console.error("[Frontend] Error al dar de alta:", error);
-      Alert.alert("Error", "No se pudo completar el alta médica");
-    } finally {
-      setLoading(false);
-      setCunaToConfirm(null);
+    const mostrarDetalle = (cuna) => {
+        setCunaSeleccionada(cuna);
+        setVista('detalle');
+    };
+
+    const volverAListado = () => {
+        setVista('grid');
+        setCunaSeleccionada(null);
+    };
+
+    // --- Technical Problem Modal Logic ---
+    const abrirModalProblema = () => {
+        setCunaProblema('');
+        setDescripcionProblema('');
+        setModalProblema(true);
+    };
+
+    const cerrarModalProblema = () => {
+        setModalProblema(false);
+    };
+
+    const enviarProblemaTecnico = async () => {
+        if (!cunaProblema || !descripcionProblema.trim()) {
+            Alert.alert('Campos incompletos', 'Por favor, selecciona una cuna y describe el problema.');
+            return;
+        }
+        setEnviandoProblema(true);
+        try {
+            const body = {
+                idCuna: cunaProblema,
+                descripcion: descripcionProblema,
+                idEnfermero: userId,
+                fecha: new Date().toISOString(),
+            };
+            const res = await fetch(`${MONGO_API_BASE}/problemas-tecnicos`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) throw new Error('No se pudo guardar el problema técnico');
+            Alert.alert('Éxito', 'El problema técnico fue reportado correctamente.');
+            cerrarModalProblema();
+        } catch (e) {
+            Alert.alert('Error', e.message);
+        } finally {
+            setEnviandoProblema(false);
+        }
+    };
+
+    // --- Render Components ---
+    const renderDetalleCuna = (cuna) => {
+        const sensor = getCunaSensorData(cuna.idCuna);
+        const peso = getCunaWeight(cuna.idCuna);
+        
+        return (
+            <View style={styles.detalleContainer}>
+                <View style={styles.detalleHeader}>
+                    <Text style={styles.detalleTitle}>{cuna.nombre}</Text>
+                    <Text style={styles.detalleSubtitle}>Asignada el {new Date(cuna.fechaAsig).toLocaleDateString()}</Text>
+                </View>
+
+                <View style={styles.detalleCard}>
+                    <Text style={styles.cardSectionTitle}>Signos Vitales</Text>
+                    <Dato icon="thermometer-outline" label="Temperatura" value={sensor?.temperatura !== undefined ? `${sensor.temperatura.toFixed(1)}` : '---'} unit="°C" color="#C026D3" />
+                    <Dato icon="heart-outline" label="Frec. Cardiaca" value={sensor?.frecuenciaCardiaca !== undefined ? sensor.frecuenciaCardiaca : '---'} unit="BPM" color="#DB2777" />
+                    <Dato icon="pulse-outline" label="Oxigenación" value={sensor?.oxigenacion !== undefined ? `${sensor.oxigenacion}` : '---'} unit="%" color="#4338CA" />
+                    <Dato icon="body-outline" label="Movimiento" value={sensor?.movimiento !== undefined ? (sensor.movimiento ? 'Detectado' : 'No Detectado') : '---'} color="#7C3AED" />
+                    <Dato icon="scale-outline" label="Peso Actual" value={peso !== '---' ? `${peso}` : '---'} unit="kg" color="#6D28D9" />
+                </View>
+
+                <View style={styles.detalleCard}>
+                    <Text style={styles.cardSectionTitle}>Información de Ubicación</Text>
+                    <Dato icon="checkmark-circle-outline" label="Estado" value={cuna.status} color={colors.success} />
+                    <Dato icon="business-outline" label="Cuarto" value={cuna.nombreCuarto} color={colors.primaryDark} />
+                    <Dato icon="git-network-outline" label="Hospital" value={cuna.nombreHospital} color={colors.primaryDark} />
+                </View>
+                
+                <TouchableOpacity style={styles.actionButton} onPress={() => handleDarAlta(cuna)}>
+                    <Ionicons name="log-out-outline" size={22} color="#fff" />
+                    <Text style={styles.actionButtonText}>Dar de Alta Médica</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    };
+
+    if (loading && !cunas.length) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.loadingText}>Cargando cunas...</Text>
+            </View>
+        );
     }
-  };
 
-  const cancelDarAlta = () => {
-    setIsModalVisible(false);
-    setCunaToConfirm(null);
-  };
-
-  const mostrarDetalle = (cuna) => {
-    setCunaSeleccionada(cuna);
-    setVista('detalle');
-  };
-
-  const volverAListado = () => {
-    setVista('grid');
-    setCunaSeleccionada(null);
-  };
-
-  // --- Lógica del Modal de Problema Técnico ---
-  const abrirModalProblema = () => {
-    setCunaProblema('');
-    setDescripcionProblema('');
-    setModalProblema(true);
-  };
-
-  const cerrarModalProblema = () => {
-    setModalProblema(false);
-  };
-
-  const enviarProblemaTecnico = async () => {
-    if (!cunaProblema || !descripcionProblema.trim()) {
-      Alert.alert('Error', 'Selecciona una cuna y describe el problema.');
-      return;
-    }
-    setEnviandoProblema(true);
-    try {
-      const body = {
-        idCuna: cunaProblema,
-        descripcion: descripcionProblema,
-        idEnfermero: userId,
-        fecha: new Date().toISOString(),
-      };
-      const res = await fetch(`${MONGO_API_BASE}/problemas-tecnicos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error('No se pudo guardar el problema técnico');
-      Alert.alert('Éxito', 'El problema técnico fue reportado correctamente.');
-      cerrarModalProblema();
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setEnviandoProblema(false);
-    }
-  };
-
-  // --- Componentes de Renderizado ---
-  const renderDetalleCuna = (cuna) => {
-    const sensor = getCunaSensorData(cuna.idCuna);
-    const peso = getCunaWeight(cuna.idCuna);
-    
     return (
-      <View style={styles.detalleContainerCompleto}>
-        <View style={styles.detalleHeader}>
-          <Text style={styles.detalleTitle}>{cuna.nombre}</Text>
-          <Text style={styles.detalleSub}>Asignada el {new Date(cuna.fechaAsig).toLocaleDateString()}</Text>
-        </View>
-        <View style={styles.detalleCard}>
-          <Dato icon="thermometer" label="Temperatura" value={sensor?.temperatura !== undefined ? `${sensor.temperatura.toFixed(1)}°C` : '---'} color="#FF5252" />
-          <Dato icon="heart" label="Frec. Cardiaca" value={sensor?.frecuenciaCardiaca !== undefined ? sensor.frecuenciaCardiaca : '---'} color="#E91E63" />
-          <Dato icon="pulse" label="Oxigenación" value={sensor?.oxigenacion !== undefined ? `${sensor.oxigenacion}%` : '---'} color="#42A5F5" />
-          <Dato icon="move" label="Movimiento" value={sensor?.movimiento !== undefined ? (sensor.movimiento ? 'Sí' : 'No') : '---'} color="#AB47BC" />
-          <Dato icon="scale" label="Peso" value={peso !== '---' ? `${peso} kg` : '---'} color="#7E57C2" />
-          <Dato icon="checkmark-circle" label="Estado" value={cuna.status} color="#5D9C59" />
-          <Dato icon="home" label="Cuarto" value={cuna.nombreCuarto} color="#4A2C8E" />
-          <Dato icon="medkit" label="Hospital" value={cuna.nombreHospital} color="#4A2C8E" />
-          
-          <TouchableOpacity
-            style={styles.botonDarAlta}
-            onPress={() => handleDarAlta(cuna)}
-          >
-            <Ionicons name="log-out-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-            <Text style={styles.botonTexto}>Dar de alta</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
+        <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+            <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+            <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
+                
+                {vista === 'detalle' && cunaSeleccionada ? (
+                    <>
+                        <TouchableOpacity style={styles.backButton} onPress={volverAListado}>
+                            <Ionicons name="arrow-back-outline" size={24} color={colors.primary} />
+                        </TouchableOpacity>
+                        {renderDetalleCuna(cunaSeleccionada)}
+                    </>
+                ) : (
+                    <>
+                        <Text style={styles.headerTitle}>Cunas Asignadas</Text>
+                        {cunas.length === 0 ? (
+                            <View style={styles.noCunasContainer}>
+                                <Ionicons name="bed-outline" size={60} color="#D1D5DB" />
+                                <Text style={styles.noCunasText}>No tienes cunas asignadas.</Text>
+                            </View>
+                        ) : cunas.length <= 2 ? (
+                            <View>
+                                {cunas.map(cuna => <View key={cuna.idCuna}>{renderDetalleCuna(cuna)}</View>)}
+                            </View>
+                        ) : (
+                            <View style={styles.grid}>
+                                {cunas.map((cuna) => {
+                                    const sensor = getCunaSensorData(cuna.idCuna);
+                                    const peso = getCunaWeight(cuna.idCuna);
+                                    return (
+                                        <TouchableOpacity key={cuna.idCuna} style={styles.card} onPress={() => mostrarDetalle(cuna)}>
+                                            <View style={styles.cardHeader}>
+                                                <Text style={styles.cunaTitle}>{cuna.nombre}</Text>
+                                                <View style={[styles.statusBadge, { backgroundColor: cuna.status === 'Ocupada' ? colors.success : colors.textMuted }]} />
+                                            </View>
+                                            <View style={styles.cardSensorGrid}>
+                                                <MiniSensor icon="heart-outline" label="BPM" value={sensor?.frecuenciaCardiaca || '---'} color="#DB2777" />
+                                                <MiniSensor icon="pulse-outline" label="O₂" value={sensor?.oxigenacion ? `${sensor.oxigenacion}%` : '---'} color="#4338CA" />
+                                                <MiniSensor icon="scale-outline" label="Peso" value={peso !== '---' ? `${peso}kg` : '---'} color="#6D28D9" />
+                                                <MiniSensor icon="thermometer-outline" label="Temp" value={sensor?.temperatura ? `${sensor.temperatura.toFixed(1)}°` : '---'} color="#C026D3" />
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                        )}
+                    </>
+                )}
+            </ScrollView>
 
-  if (loading && !cunas.length) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F9F5FF' }}>
-        <ActivityIndicator size="large" color="#4A2C8E" />
-        <Text style={{ fontSize: 18, color: '#4A2C8E', marginTop: 10 }}>Cargando cunas...</Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={{ flex: 1 }}>
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 120 }}>
-        <Text style={styles.headerTitle}>Cunas Asignadas</Text>
-
-        {vista === 'detalle' && cunaSeleccionada ? (
-          <View>
-            {renderDetalleCuna(cunaSeleccionada)}
-            <TouchableOpacity style={styles.botonVolver} onPress={volverAListado}>
-               <Ionicons name="arrow-back-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-               <Text style={styles.botonTexto}>Volver al listado</Text>
+            <TouchableOpacity style={styles.fab} onPress={abrirModalProblema} activeOpacity={0.8}>
+                <Ionicons name="build-outline" size={28} color="#fff" />
             </TouchableOpacity>
-          </View>
-        ) : (
-          <View>
-            {cunas.length === 0 ? (
-              <Text style={styles.noCunasText}>No tienes cunas asignadas actualmente.</Text>
-            ) : cunas.length <= 2 ? (
-              <View>
-                {cunas.map(cuna => <View key={cuna.idCuna}>{renderDetalleCuna(cuna)}</View>)}
-              </View>
-            ) : (
-              <View style={styles.grid}>
-                {cunas.map((cuna) => {
-                  const sensor = getCunaSensorData(cuna.idCuna);
-                  const peso = getCunaWeight(cuna.idCuna);
-                  return (
-                    <TouchableOpacity key={cuna.idCuna} style={styles.card} onPress={() => mostrarDetalle(cuna)}>
-                      <Text style={styles.cunaTitle}>{cuna.nombre}</Text>
-                      <MiniSensor icon="heart" label="F.C." value={sensor?.frecuenciaCardiaca || '---'} color="#E91E63" />
-                      <MiniSensor icon="pulse" label="O₂" value={sensor?.oxigenacion ? `${sensor.oxigenacion}%` : '---'} color="#42A5F5" />
-                      <MiniSensor icon="scale" label="Peso" value={peso !== '---' ? `${peso} kg` : '---'} color="#7E57C2" />
-                      <MiniSensor icon="checkmark-circle" label="Estado" value={cuna.status} color="#5D9C59" />
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        )}
-      </ScrollView>
 
-      {/* Modales y Botón Flotante */}
-      <ConfirmationModal
-        isVisible={isModalVisible}
-        title="Confirmar Alta Médica"
-        message={`¿Estás seguro de dar de alta al bebé en ${cunaToConfirm ? cunaToConfirm.nombre : 'esta cuna'}?`}
-        onConfirm={confirmDarAlta}
-        onCancel={cancelDarAlta}
-      />
-
-      <TouchableOpacity
-        style={styles.fabProblema}
-        onPress={abrirModalProblema}
-        activeOpacity={0.8}
-      >
-        <Ionicons name="alert-circle-outline" size={28} color="#fff" />
-        <Text style={{ color: '#fff', fontWeight: 'bold', marginLeft: 8 }}>Reportar Falla</Text>
-      </TouchableOpacity>
-
-      <Modal visible={modalProblema} transparent animationType="slide" onRequestClose={cerrarModalProblema}>
-        <View style={modalStyles.overlay}>
-          <View style={modalStyles.container}>
-            <Text style={modalStyles.title}>Reporte de Problema Técnico</Text>
-            <Text style={modalStyles.label}>Selecciona la cuna:</Text>
-            <View style={modalStyles.selectContainer}>
-              <Ionicons name="bed-outline" size={20} color="#4A2C8E" style={{ marginRight: 8 }} />
-              <Picker
-                selectedValue={cunaProblema}
-                style={modalStyles.picker}
-                onValueChange={itemValue => setCunaProblema(itemValue)}
-                mode="dropdown"
-                dropdownIconColor="#4A2C8E"
-              >
-                <Picker.Item label="Selecciona una cuna" value="" color="#888" />
-                {cunas.map(cuna => (
-                  <Picker.Item key={cuna.idCuna} label={cuna.nombre} value={cuna.idCuna} />
-                ))}
-              </Picker>
-            </View>
-            <Text style={modalStyles.label}>Descripción del problema:</Text>
-            <TextInput
-              style={modalStyles.input}
-              placeholder="Describe el problema técnico de la cuna o sensores..."
-              value={descripcionProblema}
-              onChangeText={setDescripcionProblema}
-              multiline
-              numberOfLines={4}
-            />
-            <View style={modalStyles.buttonContainer}>
-              <TouchableOpacity style={modalStyles.cancelButton} onPress={cerrarModalProblema} disabled={enviandoProblema}>
-                <Text style={modalStyles.buttonText}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={modalStyles.confirmButton} onPress={enviarProblemaTecnico} disabled={enviandoProblema}>
-                <Text style={modalStyles.buttonText}>{enviandoProblema ? 'Enviando...' : 'Aceptar'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
+            <Modal visible={modalProblema} transparent animationType="slide" onRequestClose={cerrarModalProblema}>
+                <View style={modalStyles.overlay}>
+                    <View style={[modalStyles.container, { paddingBottom: 30 }]}>
+                        <Text style={modalStyles.title}>Reportar Falla Técnica</Text>
+                        
+                        <Text style={modalStyles.inputLabel}>Cuna afectada</Text>
+                        <View style={modalStyles.pickerContainer}>
+                            <Picker
+                                selectedValue={cunaProblema}
+                                style={modalStyles.picker}
+                                onValueChange={itemValue => setCunaProblema(itemValue)}
+                                mode="dropdown"
+                            >
+                                <Picker.Item label="Selecciona una cuna..." value="" color="#9ca3af" />
+                                {cunas.map(cuna => (
+                                    <Picker.Item key={cuna.idCuna} label={cuna.nombre} value={cuna.idCuna} />
+                                ))}
+                            </Picker>
+                        </View>
+                        
+                        <Text style={modalStyles.inputLabel}>Descripción del problema</Text>
+                        <TextInput
+                            style={modalStyles.input}
+                            placeholder="Ej: El sensor de temperatura no responde..."
+                            placeholderTextColor="#9ca3af"
+                            value={descripcionProblema}
+                            onChangeText={setDescripcionProblema}
+                            multiline
+                        />
+                        <View style={modalStyles.buttonContainer}>
+                            <TouchableOpacity style={[modalStyles.button, modalStyles.cancelButton]} onPress={cerrarModalProblema} disabled={enviandoProblema}>
+                                <Text style={[modalStyles.buttonText, modalStyles.cancelButtonText]}>Cancelar</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[modalStyles.button, modalStyles.confirmButton, {backgroundColor: colors.primary}]} onPress={enviarProblemaTecnico} disabled={enviandoProblema}>
+                                <Text style={[modalStyles.buttonText, modalStyles.confirmButtonText]}>{enviandoProblema ? 'Enviando...' : 'Reportar'}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        </SafeAreaView>
+    );
 }
 
-// --- Estilos ---
+// --- Styles ---
+const { width } = Dimensions.get('window');
+
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9F5FF', padding: 16 },
-  headerTitle: { fontSize: 22, fontWeight: 'bold', color: '#4A2C8E', textAlign: 'center', marginBottom: 24 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 16 },
-  card: {
-    width: (screenWidth / 2) - 24,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 15,
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: '#7E57C2',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-  cunaTitle: { fontSize: 16, fontWeight: 'bold', color: '#4A2C8E', marginBottom: 10, textAlign: 'center' },
-  miniSensor: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
-  miniLabel: { marginLeft: 5, fontSize: 13, color: '#555', fontWeight: '600' },
-  miniValue: { marginLeft: 5, fontSize: 13, fontWeight: 'bold', color: '#2c3e50' },
-  dato: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  label: { fontSize: 16, color: '#4A2C8E', fontWeight: '600' },
-  value: { fontSize: 16, marginLeft: 6, fontWeight: 'bold', color: '#333' },
-  detalleHeader: { alignItems: 'center', marginBottom: 20, marginTop: 10 },
-  detalleTitle: { fontSize: 24, fontWeight: 'bold', color: '#4A2C8E' },
-  detalleSub: { fontSize: 14, color: '#777', marginTop: 4 },
-  detalleCard: {
-    backgroundColor: '#fff',
-    borderRadius: 15,
-    padding: 20,
-    elevation: 5,
-    shadowColor: '#7E57C2',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    marginHorizontal: 5,
-  },
-  detalleContainerCompleto: {
-    marginBottom: 25,
-  },
-  botonVolver: {
-    flexDirection: 'row',
-    alignSelf: 'center',
-    backgroundColor: '#4A2C8E',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 25,
-    alignItems: 'center',
-    elevation: 4,
-    marginBottom: 40,
-    marginTop: 10,
-  },
-  botonDarAlta: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#d9534f',
-    paddingVertical: 12,
-    borderRadius: 25,
-    marginTop: 20,
-    elevation: 3,
-    shadowColor: '#d9534f',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-  },
-  botonTexto: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  noCunasText: {
-    textAlign: 'center',
-    marginTop: 20,
-    fontSize: 16,
-    color: '#777',
-    width: '100%',
-  },
-  fabProblema: {
-    position: 'absolute',
-    right: 24,
-    bottom: 32,
-    backgroundColor: '#d9534f',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 22,
-    paddingVertical: 16,
-    borderRadius: 30,
-    elevation: 6,
-    shadowColor: '#d9534f',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    zIndex: 20,
-  }
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background },
+    loadingText: { fontSize: 18, color: colors.primary, marginTop: 10, fontWeight: '500' },
+    container: { flex: 1, backgroundColor: colors.background, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
+    headerTitle: { fontSize: 32, fontWeight: 'bold', color: colors.primaryDark, paddingHorizontal: 20, marginBottom: 24, marginTop: 20 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingHorizontal: 20 },
+    card: {
+        width: (width - 55) / 2,
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
+        borderWidth: 1,
+        borderColor: colors.primaryLight,
+    },
+    cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+    cunaTitle: { fontSize: 18, fontWeight: 'bold', color: colors.primaryDark },
+    statusBadge: { width: 10, height: 10, borderRadius: 5 },
+    cardSensorGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'space-between',
+        rowGap: 12,
+        marginTop: 4,
+    },
+    miniSensor: { alignItems: 'center', width: '48%' },
+    miniValue: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+    miniLabel: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+    
+    // Detail View
+    backButton: { position: 'absolute', top: 20, left: 20, zIndex: 10, backgroundColor: colors.primaryLight, padding: 8, borderRadius: 20 },
+    detalleContainer: { paddingHorizontal: 20 },
+    detalleHeader: { alignItems: 'center', marginVertical: 20 },
+    detalleTitle: { fontSize: 28, fontWeight: 'bold', color: colors.primaryDark },
+    detalleSubtitle: { fontSize: 16, color: colors.textSecondary, marginTop: 4 },
+    detalleCard: {
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        padding: 20,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    cardSectionTitle: { fontSize: 18, fontWeight: 'bold', color: colors.primaryDark, marginBottom: 15, borderBottomWidth: 1, borderBottomColor: colors.primaryLight, paddingBottom: 10 },
+    datoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 },
+    datoLabelContainer: { flexDirection: 'row', alignItems: 'center' },
+    datoIcon: { marginRight: 15, width: 22 },
+    datoLabel: { fontSize: 16, color: colors.textSecondary, fontWeight: '500' },
+    datoValue: { fontSize: 16, fontWeight: 'bold', color: colors.textPrimary },
+    datoUnit: { color: colors.textMuted, fontWeight: '500' },
+    actionButton: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: colors.danger,
+        paddingVertical: 16,
+        borderRadius: 12,
+        marginTop: 10,
+        elevation: 3,
+    },
+    actionButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 10 },
+    
+    noCunasContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 50, opacity: 0.7 },
+    noCunasText: { textAlign: 'center', marginTop: 16, fontSize: 18, color: colors.textSecondary },
+
+    fab: {
+        position: 'absolute',
+        right: 20,
+        bottom: 30,
+        backgroundColor: colors.primary,
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 8,
+        shadowColor: colors.primary,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+    }
 });
 
 const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  container: {
-    width: '88%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 26,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4A2C8E',
-    marginBottom: 18,
-    textAlign: 'center',
-  },
-  message: {
-    fontSize: 16,
-    color: '#333',
-    marginBottom: 25,
-    textAlign: 'center',
-  },
-  label: {
-      fontSize: 16,
-      color: '#4A2C8E',
-      fontWeight: '600',
-      alignSelf: 'flex-start',
-      marginBottom: 8,
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '100%',
-    marginTop: 10,
-    gap: 10,
-  },
-  confirmButton: {
-    backgroundColor: '#d9534f',
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 25,
-    minWidth: 110,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#6c757d',
-    paddingVertical: 12,
-    paddingHorizontal: 28,
-    borderRadius: 25,
-    minWidth: 110,
-    alignItems: 'center',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  selectContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f3f4f6',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    marginBottom: 12,
-    width: '100%',
-    height: 50,
-  },
-  picker: {
-    flex: 1,
-    color: '#333',
-    backgroundColor: 'transparent',
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 16,
-    backgroundColor: '#f9f9fb',
-    color: '#333',
-    width: '100%',
-    minHeight: 70,
-    marginBottom: 18,
-    textAlignVertical: 'top',
-  },
+    overlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+    container: {
+        width: '100%',
+        backgroundColor: colors.card,
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+    },
+    title: { fontSize: 22, fontWeight: 'bold', color: colors.textPrimary, marginBottom: 12, textAlign: 'center' },
+    message: { fontSize: 16, color: colors.textSecondary, marginBottom: 24, textAlign: 'center', lineHeight: 24 },
+    inputLabel: { fontSize: 16, fontWeight: '600', color: colors.textPrimary, alignSelf: 'flex-start', marginBottom: 8 },
+    pickerContainer: {
+        width: '100%',
+        backgroundColor: colors.background,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+        marginBottom: 16,
+        height: 56,
+        justifyContent: 'center'
+    },
+    picker: { flex: 1, color: colors.textPrimary },
+    input: {
+        width: '100%',
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 12,
+        padding: 16,
+        fontSize: 16,
+        backgroundColor: colors.background,
+        color: colors.textPrimary,
+        minHeight: 100,
+        marginBottom: 24,
+        textAlignVertical: 'top',
+    },
+    buttonContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', gap: 12 },
+    button: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: 'center' },
+    confirmButton: { backgroundColor: colors.danger },
+    cancelButton: { backgroundColor: colors.border },
+    buttonText: { fontSize: 16, fontWeight: 'bold' },
+    confirmButtonText: { color: '#fff' },
+    cancelButtonText: { color: colors.textSecondary },
 });

@@ -22,8 +22,8 @@ export default function ChartEnfermeroScreen({ userId }) {
   const [observacion, setObservacion] = useState("")
   const [alertaSeleccionada, setAlertaSeleccionada] = useState(null)
 
-  const SQL_API_BASE = "http://localhost:3000"
-  const MONGO_API_BASE = "http://localhost:5000"
+  const SQL_API_BASE = "http://192.168.0.223:3000"
+  const MONGO_API_BASE = "http://192.168.0.223:5000"
 
   const fetchAlertsForEnfermero = async () => {
     if (!userId) {

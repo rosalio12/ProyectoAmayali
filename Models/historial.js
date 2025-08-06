@@ -11,6 +11,7 @@ import {
   TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HistoryScreen({ userId }) { // Recibe userId como prop
   const [vaccines, setVaccines] = useState([]);
@@ -145,137 +146,141 @@ export default function HistoryScreen({ userId }) { // Recibe userId como prop
 
   if (loading) {
     return (
-      <View style={styles.loaderContainer}>
-        <ActivityIndicator size="large" color="#6c5ce7" />
-        <Text style={{ marginTop: 10, color: '#6c5ce7' }}>Cargando historial médico...</Text>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#f9f9fb' }}>
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#6c5ce7" />
+          <Text style={{ marginTop: 10, color: '#6c5ce7' }}>Cargando historial médico...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   // Una vez que loading es false (ya sea por éxito o por error/sin datos),
   // se renderiza esta parte, mostrando la UI con o sin datos.
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Ionicons name="folder-open-outline" size={28} color="#6c5ce7" />
-        <Text style={styles.screenTitle}>Historial Médico</Text>
-      </View>
-
-      {/* VACUNAS */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Ionicons name="shield-checkmark-outline" size={24} color="#6c5ce7" />
-          <Text style={styles.cardTitle}>Vacunas</Text>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#f9f9fb' }}>
+      <ScrollView style={styles.container}>
+        <View style={styles.header}>
+          <Ionicons name="folder-open-outline" size={28} color="#6c5ce7" />
+          <Text style={styles.screenTitle}>Historial Médico</Text>
         </View>
-        {vaccines.length > 0 ? (
-          vaccines.map((v, i) => (
-            <View key={i} style={styles.item}>
-              <Ionicons name="medkit-outline" size={18} color="#6c5ce7" style={{ marginRight: 8 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.itemTitle}>{v.Vacunas}</Text>
-                <Text style={styles.itemDetail}>{formatFecha(v.FechaVisitaMedica)}</Text>
+
+        {/* VACUNAS */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="shield-checkmark-outline" size={24} color="#6c5ce7" />
+            <Text style={styles.cardTitle}>Vacunas</Text>
+          </View>
+          {vaccines.length > 0 ? (
+            vaccines.map((v, i) => (
+              <View key={i} style={styles.item}>
+                <Ionicons name="medkit-outline" size={18} color="#6c5ce7" style={{ marginRight: 8 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemTitle}>{v.Vacunas}</Text>
+                  <Text style={styles.itemDetail}>{formatFecha(v.FechaVisitaMedica)}</Text>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="alert-circle-outline" size={20} color="#aaa" />
+              {idBebe === null ? (
+                <Text style={styles.singleItem}>No se pudo cargar vacunas. Bebé no asociado o error en el servidor.</Text>
+              ) : (
+                <Text style={styles.singleItem}>No hay vacunas registradas aún</Text>
+              )}
+            </View>
+          )}
+          <TouchableOpacity
+            style={[styles.addButton, idBebe === null && styles.disabledButton]}
+            onPress={() => {
+              setModalType('vacuna');
+              setModalVisible(true);
+            }}
+            disabled={idBebe === null}
+          >
+            <Ionicons name="add-circle-outline" size={20} color="#fff" />
+            <Text style={styles.addButtonText}>Agregar Vacuna</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* CONDICIONES */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Ionicons name="heart-outline" size={24} color="#6c5ce7" />
+            <Text style={styles.cardTitle}>Condiciones Médicas</Text>
+          </View>
+          {conditions.length > 0 ? (
+            conditions.map((c, i) => (
+              <View key={i} style={styles.item}>
+                <Ionicons name="document-text-outline" size={18} color="#6c5ce7" style={{ marginRight: 8 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.itemTitle}>{c.Descripcion}</Text>
+                  <Text style={styles.itemDetail}>{formatFecha(c.FechaVisitaMedica)}</Text>
+                </View>
+              </View>
+            ))
+          ) : (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="alert-circle-outline" size={20} color="#aaa" />
+              {idBebe === null ? (
+                <Text style={styles.singleItem}>No se pudo cargar condiciones. Bebé no asociado o error en el servidor.</Text>
+              ) : (
+                <Text style={styles.singleItem}>Sin condiciones médicas registradas</Text>
+              )}
+            </View>
+          )}
+          <TouchableOpacity
+            style={[styles.addButton, idBebe === null && styles.disabledButton]}
+            onPress={() => {
+              setModalType('condicion');
+              setModalVisible(true);
+            }}
+            disabled={idBebe === null}
+          >
+            <Ionicons name="add-circle-outline" size={20} color="#fff" />
+            <Text style={styles.addButtonText}>Agregar Condición</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* MODAL */}
+        <Modal
+          visible={modalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setModalVisible(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>
+                {modalType === 'vacuna' ? 'Nueva Vacuna' : 'Nueva Condición Médica'}
+              </Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Describe aquí..."
+                placeholderTextColor="#999"
+                value={inputValue}
+                onChangeText={setInputValue}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.saveButton} onPress={handleAdd}>
+                  <Text style={styles.buttonText}>Guardar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.cancelButton}
+                  onPress={() => {
+                    setModalVisible(false);
+                    setInputValue('');
+                  }}
+                >
+                  <Text style={styles.buttonText}>Cancelar</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          ))
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="alert-circle-outline" size={20} color="#aaa" />
-            {idBebe === null ? (
-              <Text style={styles.singleItem}>No se pudo cargar vacunas. Bebé no asociado o error en el servidor.</Text>
-            ) : (
-              <Text style={styles.singleItem}>No hay vacunas registradas aún</Text>
-            )}
           </View>
-        )}
-        <TouchableOpacity
-          style={[styles.addButton, idBebe === null && styles.disabledButton]}
-          onPress={() => {
-            setModalType('vacuna');
-            setModalVisible(true);
-          }}
-          disabled={idBebe === null}
-        >
-          <Ionicons name="add-circle-outline" size={20} color="#fff" />
-          <Text style={styles.addButtonText}>Agregar Vacuna</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* CONDICIONES */}
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Ionicons name="heart-outline" size={24} color="#6c5ce7" />
-          <Text style={styles.cardTitle}>Condiciones Médicas</Text>
-        </View>
-        {conditions.length > 0 ? (
-          conditions.map((c, i) => (
-            <View key={i} style={styles.item}>
-              <Ionicons name="document-text-outline" size={18} color="#6c5ce7" style={{ marginRight: 8 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.itemTitle}>{c.Descripcion}</Text>
-                <Text style={styles.itemDetail}>{formatFecha(c.FechaVisitaMedica)}</Text>
-              </View>
-            </View>
-          ))
-        ) : (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="alert-circle-outline" size={20} color="#aaa" />
-            {idBebe === null ? (
-              <Text style={styles.singleItem}>No se pudo cargar condiciones. Bebé no asociado o error en el servidor.</Text>
-            ) : (
-              <Text style={styles.singleItem}>Sin condiciones médicas registradas</Text>
-            )}
-          </View>
-        )}
-        <TouchableOpacity
-          style={[styles.addButton, idBebe === null && styles.disabledButton]}
-          onPress={() => {
-            setModalType('condicion');
-            setModalVisible(true);
-          }}
-          disabled={idBebe === null}
-        >
-          <Ionicons name="add-circle-outline" size={20} color="#fff" />
-          <Text style={styles.addButtonText}>Agregar Condición</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* MODAL */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {modalType === 'vacuna' ? 'Nueva Vacuna' : 'Nueva Condición Médica'}
-            </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Describe aquí..."
-              placeholderTextColor="#999"
-              value={inputValue}
-              onChangeText={setInputValue}
-            />
-            <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.saveButton} onPress={handleAdd}>
-                <Text style={styles.buttonText}>Guardar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => {
-                  setModalVisible(false);
-                  setInputValue('');
-                }}
-              >
-                <Text style={styles.buttonText}>Cancelar</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </ScrollView>
+        </Modal>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

@@ -47,8 +47,11 @@ app.get('/api/bebe/peso/:idCuna', async (req, res) => {
 });
 // ⭐️ NUEVO ENDPOINT: PUT /api/bebe/asignar-cuna
 // Asigna un bebé a una cuna disponible.
+// ⭐️ NUEVO ENDPOINT: PUT /api/bebe/asignar-cuna
+// Asigna un bebé a una cuna disponible.
 app.put('/api/bebe/asignar-cuna', async (req, res) => {
     const { idBebe, idCuna, idUsuario } = req.body;
+    
     if (!idBebe || !idCuna || !idUsuario) {
         return res.status(400).json({ message: 'Se requieren los IDs de bebé, cuna y usuario.' });
     }
@@ -57,22 +60,23 @@ app.put('/api/bebe/asignar-cuna', async (req, res) => {
     try {
         pool = await sql.connect(config);
         const transaction = new sql.Transaction(pool);
-
+        
         try {
             await transaction.begin();
-
+            
             // 1. Verificar si la cuna está disponible
             const cunaResult = await new sql.Request(transaction)
                 .input('idCuna', sql.Int, idCuna)
                 .query('SELECT Estado FROM Cuna WHERE idCuna = @idCuna');
 
             if (cunaResult.recordset.length === 0) {
-                 await transaction.rollback();
-                 return res.status(404).json({ message: `La cuna con ID ${idCuna} no existe.` });
+                await transaction.rollback();
+                return res.status(404).json({ message: `La cuna con ID ${idCuna} no existe.` });
             }
+
             if (cunaResult.recordset[0].Estado === 1) {
-                 await transaction.rollback();
-                 return res.status(409).json({ message: `La cuna #${idCuna} ya está ocupada.` });
+                await transaction.rollback();
+                return res.status(409).json({ message: `La cuna #${idCuna} ya está ocupada.` });
             }
 
             // 2. Elimina la restricción de "ya tiene cuna asignada"
@@ -82,9 +86,10 @@ app.put('/api/bebe/asignar-cuna', async (req, res) => {
                 .query('SELECT idCuna FROM Bebe WHERE idBebe = @idBebe');
 
             if (bebeResult.recordset.length === 0) {
-                 await transaction.rollback();
-                 return res.status(404).json({ message: `El bebé con ID ${idBebe} no existe.` });
+                await transaction.rollback();
+                return res.status(404).json({ message: `El bebé con ID ${idBebe} no existe.` });
             }
+
             const cunaAnterior = bebeResult.recordset[0].idCuna;
             if (cunaAnterior !== null && cunaAnterior !== idCuna) {
                 // Liberar la cuna anterior
@@ -93,7 +98,7 @@ app.put('/api/bebe/asignar-cuna', async (req, res) => {
                     .query('UPDATE Cuna SET Estado = 0, FechaAsig = NULL, idUsuario = NULL WHERE idCuna = @idCuna');
             }
 
-            // 3. Asignar la nueva cuna al bebé
+            // 3. Asignar la nueva cuna al bebé (CORREGIDO: Request en lugar de Reqtuest)
             await new sql.Request(transaction)
                 .input('idBebe', sql.Int, idBebe)
                 .input('idCuna', sql.Int, idCuna)
@@ -107,7 +112,7 @@ app.put('/api/bebe/asignar-cuna', async (req, res) => {
 
             await transaction.commit();
             res.status(200).json({ message: `Bebé asignado a la cuna #${idCuna} correctamente.` });
-
+            
         } catch (err) {
             await transaction.rollback();
             console.error('Error en la transacción de asignación:', err);
@@ -118,6 +123,7 @@ app.put('/api/bebe/asignar-cuna', async (req, res) => {
         res.status(500).json({ message: 'Error de conexión a la base de datos.', error: err.message });
     }
 });
+
 // PUT /api/cunas/dar-de-alta/:id (CORREGIDO Y MEJORADO)
 app.put('/api/cunas/dar-de-alta/:id', async (req, res) => {
   const { id: idCuna } = req.params;

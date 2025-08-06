@@ -70,6 +70,7 @@ const MedicinaSchema = new mongoose.Schema({
 const Comida = mongoose.model('ultimacomidas', ComidaSchema);
 const Medicina = mongoose.model('ultimamedicinas', MedicinaSchema);
 
+const Alimento = mongoose.model('tipoAlimento', ComidaSchema);
 // MQTT Setup
 const mqttClient = mqtt.connect('mqtt://node02.myqtthub.com', {
   username: 'Rosalio',
@@ -183,7 +184,9 @@ app.get('/comida', async (req, res) => {
   try {
     const query = req.query.cunaId ? { cunaId: req.query.cunaId } : {};
     const data = await Comida.find(query).sort({ timestamp: -1 });
+    const alimentos = await Alimento.find({}).sort({ tipoAlimento: 1 });
     res.json({ success: true, data });
+
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -253,7 +256,9 @@ app.get('/registro-alimentacion/ultimo/:cunaId', async (req, res) => {
 
     res.json({
       ultimaComida: ultimaComida ? ultimaComida.timestamp : null,
-      ultimoMedicamento: ultimoMedicamento ? ultimoMedicamento.timestamp : null
+      tipoAlimento: ultimaComida ? ultimaComida.tipoAlimento : null,
+      ultimoMedicamento: ultimoMedicamento ? ultimoMedicamento.timestamp : null,
+      nombreMedicina: ultimoMedicamento ? ultimoMedicamento.nombreMedicina : null,
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

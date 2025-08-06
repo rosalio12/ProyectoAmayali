@@ -10,30 +10,43 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
-
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-// --- Componente de Tarjeta reutilizable para un diseño limpio ---
+// --- Color Palette ---
+const colors = {
+  primary: '#6D28D9',
+  primaryDark: '#4C1D95',
+  primaryLight: '#EDE9FE',
+  background: '#F5F3FF',
+  card: '#FFFFFF',
+  textPrimary: '#1E293B',
+  textSecondary: '#475569',
+  textMuted: '#6B7280',
+  border: '#DDD6FE',
+  success: '#16A34A',
+  disabled: '#A78BFA',
+};
+
+// --- Reusable Card Component ---
 const Card = ({ children, title, iconName }) => (
   <View style={styles.card}>
     <View style={styles.cardHeader}>
-      <Icon name={iconName} size={24} color="#008080" />
+      <Icon name={iconName} size={24} color={colors.primary} />
       <Text style={styles.cardTitle}>{title}</Text>
     </View>
-    <View style={styles.cardContent}>
-      {children}
-    </View>
+    <View style={styles.cardContent}>{children}</View>
   </View>
 );
 
 export default function RegistroCuidadosScreen({ idUsuario }) {
-  // --- ESTADO ---
+  // --- STATE ---
   const [bebes, setBebes] = useState([]);
   const [idBebe, setIdBebe] = useState(null);
-  const [comida, setComida] = useState('');
+  const [cantidadLeche, setCantidadLeche] = useState(''); // MODIFICADO: De 'comida' a 'cantidadLeche'
   const [horaComida, setHoraComida] = useState(new Date());
   const [medicamento, setMedicamento] = useState('');
   const [horaMedicamento, setHoraMedicamento] = useState(new Date());
@@ -41,21 +54,22 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
   const [ultimoMed, setUltimoMed] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Estados para controlar la visibilidad de los selectores de hora
   const [showComidaPicker, setShowComidaPicker] = useState(false);
   const [showMedPicker, setShowMedPicker] = useState(false);
 
-  // --- CONFIGURACIÓN ---
-  const API_URL = 'http://localhost:5000';
-  const API_BEBES_URL = 'http://localhost:3000';
+  // --- CONFIGURATION ---
+  const API_URL = 'http://192.168.0.223:5000';
+  const API_BEBES_URL = 'http://192.168.0.223:3000';
 
-  // --- EFECTOS (FETCH DE DATOS) ---
-  // MODIFICADO: Usar el endpoint correcto y el idUsuario recibido por props
+  // --- DATA FETCHING ---
   const fetchBebes = useCallback(() => {
+    if (!idUsuario) {
+        setLoading(false);
+        return;
+    }
     setLoading(true);
     fetch(`${API_BEBES_URL}/api/bebes/enfermero/${idUsuario}`)
-      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then(res => (res.ok ? res.json() : Promise.reject(res)))
       .then(data => {
         setBebes(data);
         if (data.length > 0) {
@@ -63,7 +77,7 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
         }
       })
       .catch(err => {
-        console.error("Error al cargar bebés:", err);
+        console.error('Error al cargar bebés:', err);
         Alert.alert('Error', 'No se pudieron cargar los datos de los bebés.');
       })
       .finally(() => setLoading(false));
@@ -72,7 +86,7 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
   const fetchUltimosRegistros = useCallback(() => {
     if (!idBebe) return;
     fetch(`${API_URL}/registro-alimentacion/ultimo/${idBebe}`)
-      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then(res => (res.ok ? res.json() : Promise.reject(res)))
       .then(data => {
         setUltimaComida(data?.ultimaComida || null);
         setUltimoMed(data?.ultimoMedicamento || null);
@@ -90,53 +104,46 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
     fetchUltimosRegistros();
   }, [idBebe, fetchUltimosRegistros]);
 
-  // Siempre actualizar la última comida en pantalla cuando cambie ultimaComida
-  useEffect(() => {
-    // Este efecto fuerza el renderizado del valor actualizado de ultimaComida
-    // No requiere lógica adicional, React lo re-renderiza automáticamente
-  }, [ultimaComida]);
-
-  // --- MANEJADORES DE EVENTOS ---
+  // --- EVENT HANDLERS ---
   const handleDateChange = (event, selectedDate, type) => {
-    if (type === 'comida') {
-      setShowComidaPicker(Platform.OS === 'ios');
-      if (selectedDate) {
-        setHoraComida(selectedDate);
-      }
-    } else if (type === 'medicamento') {
-      setShowMedPicker(Platform.OS === 'ios');
-      if (selectedDate) {
-        setHoraMedicamento(selectedDate);
-      }
+    const pickerSetter = type === 'comida' ? setShowComidaPicker : setShowMedPicker;
+    const dateSetter = type === 'comida' ? setHoraComida : setHoraMedicamento;
+    
+    pickerSetter(Platform.OS === 'ios');
+    if (selectedDate) {
+      dateSetter(selectedDate);
     }
   };
 
   const enviarRegistro = async () => {
-    if (!idBebe || (!comida && !medicamento)) {
-      Alert.alert('Atención', 'Debe completar al menos un campo: comida o medicamento.');
+    // MODIFICADO: La condición ahora revisa cantidadLeche
+    if (!idBebe || (!cantidadLeche.trim() && !medicamento.trim())) {
+      Alert.alert('Atención', 'Debe completar al menos un campo: cantidad de leche o medicamento.');
       return;
     }
-    
-    setIsSubmitting(true);
 
+    setIsSubmitting(true);
     try {
+      // MODIFICADO: Formatear el campo 'comida' para el backend
+      const comidaParaEnviar = cantidadLeche.trim() ? `Leche - ${cantidadLeche}ml` : null;
+
       const response = await fetch(`${API_URL}/registro-alimentacion`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           idBebe,
-          comida: comida || null,
-          horaComida: comida ? horaComida : null,
-          medicamento: medicamento || null,
-          horaMedicamento: medicamento ? horaMedicamento : null,
+          comida: comidaParaEnviar,
+          horaComida: cantidadLeche.trim() ? horaComida : null,
+          medicamento: medicamento.trim() || null,
+          horaMedicamento: medicamento.trim() ? horaMedicamento : null,
         }),
       });
 
       if (response.ok) {
         Alert.alert('Éxito', 'Registro guardado correctamente.');
         fetchUltimosRegistros();
-        if (comida) setComida('');
-        if (medicamento) setMedicamento('');
+        setCantidadLeche(''); // MODIFICADO: Limpiar el estado correcto
+        setMedicamento('');
       } else {
         Alert.alert('Error', 'No se pudo guardar el registro. Intente de nuevo.');
       }
@@ -148,11 +155,11 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
     }
   };
 
-  // --- RENDERIZADO ---
+  // --- RENDER ---
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#008080" />
+        <ActivityIndicator size="large" color={colors.primary} />
         <Text style={styles.loadingText}>Cargando datos...</Text>
       </View>
     );
@@ -160,19 +167,21 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <Text style={styles.headerTitle}>Registro de Cuidados</Text>
-        
+
         <Card title="Seleccionar Bebé" iconName="baby-face-outline">
           <View style={styles.pickerContainer}>
             <Picker
               selectedValue={idBebe}
-              onValueChange={(itemValue) => setIdBebe(itemValue)}
+              onValueChange={itemValue => setIdBebe(itemValue)}
               enabled={bebes.length > 0}
               style={styles.picker}
+              dropdownIconColor={colors.primary}
             >
               {bebes.length > 0 ? (
-                bebes.map((bebe) => (
+                bebes.map(bebe => (
                   <Picker.Item
                     key={bebe.idBebe}
                     label={`${bebe.Nombre} ${bebe.ApellidoPaterno}`}
@@ -187,55 +196,65 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
         </Card>
 
         <Card title="Estado Actual" iconName="information-outline">
-            <View style={styles.infoRow}>
-                <Icon name="baby-bottle-outline" size={24} color="#555" />
-                <Text style={styles.infoText}>
-                  Última comida: <Text style={styles.infoBold}>
-                    {ultimaComida ? new Date(ultimaComida).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
-                  </Text>
-                </Text>
-            </View>
-            <View style={styles.infoRow}>
-                <Icon name="pill" size={24} color="#555" />
-                <Text style={styles.infoText}>
-                  Último med.: <Text style={styles.infoBold}>
-                    {ultimoMed ? new Date(ultimoMed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
-                  </Text>
-                </Text>
-            </View>
+          <View style={styles.infoRow}>
+            <Icon name="baby-bottle-outline" size={24} color={colors.textSecondary} />
+            <Text style={styles.infoText}>
+              Última comida:{' '}
+              <Text style={styles.infoBold}>
+                {ultimaComida ? new Date(ultimaComida).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+              </Text>
+            </Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Icon name="pill" size={24} color={colors.textSecondary} />
+            <Text style={styles.infoText}>
+              Último med.:{' '}
+              <Text style={styles.infoBold}>
+                {ultimoMed ? new Date(ultimoMed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+              </Text>
+            </Text>
+          </View>
         </Card>
 
+        {/* --- SECCIÓN DE ALIMENTACIÓN MODIFICADA --- */}
         <Card title="Registrar Alimentación" iconName="food-apple-outline">
-          <Text style={styles.label}>Tipo de Comida</Text>
+          <Text style={styles.label}>Cantidad de Leche (ml)</Text>
           <TextInput
             style={styles.input}
-            placeholder="Ej. Leche materna, Fórmula 80ml"
-            value={comida}
-            onChangeText={setComida}
+            placeholder="Ej. 80"
+            placeholderTextColor={colors.textMuted}
+            value={cantidadLeche}
+            onChangeText={setCantidadLeche}
+            keyboardType="numeric" // Teclado numérico para la cantidad
           />
           <TouchableOpacity style={styles.timeButton} onPress={() => setShowComidaPicker(true)}>
-            <Icon name="clock-outline" size={20} color="#008080" />
-            <Text style={styles.timeButtonText}>Hora: {horaComida.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+            <Icon name="clock-outline" size={20} color={colors.primary} />
+            <Text style={styles.timeButtonText}>
+              Hora: {horaComida.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
           </TouchableOpacity>
         </Card>
+        {/* --- FIN DE LA SECCIÓN MODIFICADA --- */}
 
         <Card title="Registrar Medicamento" iconName="medical-bag">
           <Text style={styles.label}>Nombre y Dosis</Text>
           <TextInput
             style={styles.input}
             placeholder="Ej. Paracetamol 10mg"
+            placeholderTextColor={colors.textMuted}
             value={medicamento}
             onChangeText={setMedicamento}
           />
           <TouchableOpacity style={styles.timeButton} onPress={() => setShowMedPicker(true)}>
-            <Icon name="clock-outline" size={20} color="#008080" />
-            <Text style={styles.timeButtonText}>Hora: {horaMedicamento.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+            <Icon name="clock-outline" size={20} color={colors.primary} />
+            <Text style={styles.timeButtonText}>
+              Hora: {horaMedicamento.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
           </TouchableOpacity>
         </Card>
 
         {showComidaPicker && (
           <DateTimePicker
-            testID="comidaTimePicker"
             value={horaComida}
             mode="time"
             is24Hour={true}
@@ -246,7 +265,6 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
 
         {showMedPicker && (
           <DateTimePicker
-            testID="medicamentoTimePicker"
             value={horaMedicamento}
             mode="time"
             is24Hour={true}
@@ -255,142 +273,152 @@ export default function RegistroCuidadosScreen({ idUsuario }) {
           />
         )}
 
-        <TouchableOpacity 
-            style={[styles.submitButton, (isSubmitting || !idBebe) && styles.submitButtonDisabled]}
-            onPress={enviarRegistro}
-            disabled={isSubmitting || !idBebe}
+        <TouchableOpacity
+          style={[styles.submitButton, (isSubmitting || !idBebe) && styles.submitButtonDisabled]}
+          onPress={enviarRegistro}
+          disabled={isSubmitting || !idBebe}
         >
-          <Text style={styles.submitButtonText}>
-            {isSubmitting ? 'Guardando...' : 'Guardar Registro'}
-          </Text>
+          {isSubmitting ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.submitButtonText}>Guardar Registro</Text>
+          )}
         </TouchableOpacity>
-
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// --- ESTILOS ---
+// --- STYLES ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F4FAFD',
+    backgroundColor: colors.background,
   },
   scrollContent: {
     padding: 20,
+    paddingBottom: 40,
   },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#F4FAFD',
+    backgroundColor: colors.background,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#555',
+    color: colors.textSecondary,
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.primaryDark,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 15,
+    backgroundColor: colors.card,
+    borderRadius: 16,
     padding: 20,
     marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
-    shadowRadius: 3.84,
+    shadowRadius: 10,
     elevation: 5,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
-    paddingBottom: 10,
+    borderBottomColor: colors.primaryLight,
+    paddingBottom: 12,
     marginBottom: 15,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: colors.primaryDark,
     marginLeft: 10,
   },
-  cardContent: {
-    // No necesita estilos adicionales por ahora
-  },
+  cardContent: {},
   pickerContainer: {
     borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 8,
-    backgroundColor: '#F9F9F9',
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.card,
+    overflow: 'hidden',
   },
   picker: {
-    // Estilos para el picker pueden variar por plataforma
+    color: colors.textPrimary,
   },
   infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   infoText: {
     fontSize: 16,
-    marginLeft: 10,
-    color: '#555',
+    marginLeft: 12,
+    color: colors.textSecondary,
   },
   infoBold: {
     fontWeight: 'bold',
-    color: '#333',
+    color: colors.textPrimary,
   },
   label: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#666',
+    color: colors.textSecondary,
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#F9F9F9',
+    backgroundColor: colors.background,
     borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 8,
+    borderColor: colors.border,
+    borderRadius: 12,
     paddingHorizontal: 15,
     paddingVertical: 12,
     fontSize: 16,
     marginBottom: 15,
+    color: colors.textPrimary,
   },
   timeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E6F2F2',
+    backgroundColor: colors.primaryLight,
     paddingVertical: 12,
     paddingHorizontal: 15,
-    borderRadius: 8,
+    borderRadius: 12,
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   timeButtonText: {
     marginLeft: 8,
     fontSize: 16,
     fontWeight: '600',
-    color: '#008080',
+    color: colors.primary,
   },
   submitButton: {
-    backgroundColor: '#008080',
-    paddingVertical: 15,
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 10,
+    shadowColor: colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 6,
   },
   submitButtonDisabled: {
-    backgroundColor: '#A9D4D4',
+    backgroundColor: colors.disabled,
+    shadowOpacity: 0.1,
+    elevation: 2,
   },
   submitButtonText: {
     color: '#FFFFFF',
@@ -398,4 +426,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-

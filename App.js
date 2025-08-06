@@ -247,9 +247,9 @@ function NurseTabNavigator({ userId }) {
         {props => <CunaEnfermeroScreen {...props} userId={userId} />}
       </Tab.Screen>
       <Tab.Screen
-        name="Gráficos"
+        name="Alertas"
         options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="stats-chart-outline" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="alert-circle" size={size} color={color} />,
         }}
       >
         {props => <ChartEnfermeroScreen {...props} userId={userId} />}
@@ -298,7 +298,7 @@ export default function App() {
 
       // 2. SEGUNDA LLAMADA A LA API: Obtener el idUsuario usando el nuevo endpoint
       // Asegúrate de que esta URL sea correcta y que tu backend esté corriendo en esa IP y puerto
-      const userIdApiUrl = `http://localhost:3000/api/usuario-id-by-email?email=${encodeURIComponent(firebaseUser.email)}`;
+      const userIdApiUrl = `http://192.168.0.223:3000/api/usuario-id-by-email?email=${encodeURIComponent(firebaseUser.email)}`;
       const responseId = await fetch(userIdApiUrl);
       
       if (!responseId.ok) {
@@ -352,12 +352,17 @@ export default function App() {
 }
 
 const tabScreenOptions = {
-  tabBarActiveTintColor: '#6a1b9a',
+  tabBarActiveTintColor: '#1fb34eff',
   tabBarInactiveTintColor: 'gray',
-  tabBarStyle: { height: 60, paddingBottom: 5, backgroundColor: '#ffffff' },
+  tabBarStyle: {
+    height: 90,
+    paddingBottom: 10, // <-- Aumenta el padding para separar los tabs de la barra de navegación del teléfono
+    backgroundColor: '#ffffff',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
   headerShown: false,
 };
-
 const styles = StyleSheet.create({
   keyboardContainer: {
     flex: 1,

@@ -35,7 +35,7 @@
     "react-native-camera": "^4.2.1",
     "react-native-gifted-charts": "^1.4.61",
     "react-native-modal-datetime-picker": "^18.0.0",
-    "react-native-safe-area-context": "^5.4.0",
+    "react-native-safe-area-context": "^5.5.2",
     "react-native-screens": "~4.11.1",
     "react-native-share": "^12.1.0",
     "react-native-svg": "15.11.2",
@@ -47,7 +47,8 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
-    "@react-native-community/cli": "^18.0.0"
+    "@react-native-community/cli": "^18.0.0",
+    "expo-module-scripts": "^4.1.9"
   },
   "private": true,
   "repository": {

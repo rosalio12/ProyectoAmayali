@@ -12,9 +12,10 @@ import {
   Linking
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = 'http://192.168.0.223:3000';
 
 // Componente para cada tarjeta del historial (sin cambios)
 const HistoryEntryCard = ({ entry, isEditingContact, onEdit, onSave, onCancel, draftContact, setDraftContact }) => {
@@ -259,83 +260,98 @@ export default function HistoryEnfermeroScreen({ userId }) {
   };
 
 
-  if (loading) return <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#4A2C8E" /><Text>Cargando...</Text></View>;
-  if (error) return <View style={styles.errorContainer}><Text style={styles.errorText}>Error: {error}</Text></View>;
+  if (loading) return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F0F4F8' }}>
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#4A2C8E" />
+        <Text>Cargando...</Text>
+      </View>
+    </SafeAreaView>
+  );
+  if (error) return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F0F4F8' }}>
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>Error: {error}</Text>
+      </View>
+    </SafeAreaView>
+  );
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Historial de Bebés</Text>
-      <FlatList
-        data={bebes}
-        keyExtractor={item => item.id.toString()}
-        renderItem={({ item }) => {
-          const expanded = !!expandedIds[item.id];
-          const isAddingObservation = newObservation[item.id] !== undefined;
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#F0F4F8' }}>
+      <View style={styles.container}>
+        <Text style={styles.header}>Historial de Bebés</Text>
+        <FlatList
+          data={bebes}
+          keyExtractor={item => item.id.toString()}
+          renderItem={({ item }) => {
+            const expanded = !!expandedIds[item.id];
+            const isAddingObservation = newObservation[item.id] !== undefined;
 
-          return (
-            <View style={styles.bebeCard}>
-              <TouchableOpacity onPress={() => toggleExpanded(item.id)}>
-                <View style={styles.bebeCardHeader}>
-                    <Text style={styles.bebeName}>{item.nombre} {item.apellidoPaterno} {item.apellidoMaterno}</Text>
-                    <Ionicons name={expanded ? "chevron-up-circle" : "chevron-down-circle"} size={24} color="#7E57C2" />
-                </View>
-                <Text style={styles.bebeInfo}>Nacido el: {new Date(item.fechaNacimiento).toLocaleDateString()}</Text>
-              </TouchableOpacity>
+            return (
+              <View style={styles.bebeCard}>
+                <TouchableOpacity onPress={() => toggleExpanded(item.id)}>
+                  <View style={styles.bebeCardHeader}>
+                      <Text style={styles.bebeName}>{item.nombre} {item.apellidoPaterno} {item.apellidoMaterno}</Text>
+                      <Ionicons name={expanded ? "chevron-up-circle" : "chevron-down-circle"} size={24} color="#7E57C2" />
+                  </View>
+                  <Text style={styles.bebeInfo}>Nacido el: {new Date(item.fechaNacimiento).toLocaleDateString()}</Text>
+                </TouchableOpacity>
 
-              {expanded && (
-                <View style={styles.expandedContent}>
-                  <TouchableOpacity style={styles.pdfButton} onPress={() => Linking.openURL(`${API_BASE_URL}/api/enfermero/historial/${item.id}/pdf`).catch(() => Alert.alert("Error", "No se pudo generar el PDF."))}>
-                    <Ionicons name="cloud-download-outline" size={18} color="#fff" />
-                    <Text style={styles.pdfButtonText}>Descargar Reporte PDF</Text>
-                  </TouchableOpacity>
-                  
-                  {isAddingObservation ? (
-                    <View style={styles.newForm}>
-                      <Text style={styles.detailsHeader}>Añadir Nueva Observación</Text>
-                      <TextInput
-                        style={styles.inputObservation}
-                        placeholder="Escribe una nueva observación..."
-                        value={newObservation[item.id]}
-                        onChangeText={text => setNewObservation({ [item.id]: text })}
-                        multiline
-                      />
-                      <View style={styles.buttonGroup}>
-                        <TouchableOpacity style={[styles.actionButton, styles.saveButton]} onPress={() => submitNewObservation(item.id)}>
-                          <Text style={styles.actionButtonText}>Guardar</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={cancelNewObservation}>
-                          <Text style={styles.actionButtonText}>Cancelar</Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  ) : (
-                    <TouchableOpacity style={styles.addButton} onPress={() => startNewObservation(item.id)}>
-                      <Ionicons name="add-circle-outline" size={22} color="#fff" />
-                      <Text style={styles.addButtonText}>Agregar Observación</Text>
+                {expanded && (
+                  <View style={styles.expandedContent}>
+                    <TouchableOpacity style={styles.pdfButton} onPress={() => Linking.openURL(`${API_BASE_URL}/api/enfermero/historial/${item.id}/pdf`).catch(() => Alert.alert("Error", "No se pudo generar el PDF."))}>
+                      <Ionicons name="cloud-download-outline" size={18} color="#fff" />
+                      <Text style={styles.pdfButtonText}>Descargar Reporte PDF</Text>
                     </TouchableOpacity>
-                  )}
-                  
-                  {historiesLoading[item.id] ? <ActivityIndicator /> : historiesError[item.id] ? <Text style={styles.errorText}>Error: {historiesError[item.id]}</Text> : (
-                  histories[item.id]?.length > 0 ? histories[item.id].map((entry) => (
-                    <HistoryEntryCard
-                      key={entry.idHistorial} // ✅ CORRECCIÓN APLICADA AQUÍ
-                      entry={entry}
-                      isEditingContact={editingContactId[item.id] === entry.idHistorial}
-                      onEdit={() => startEditContact(item.id, entry)}
-                      onSave={() => saveContact(item.id, entry.idHistorial)}
-                      onCancel={cancelEditContact}
-                      draftContact={draftContact}
-                      setDraftContact={setDraftContact}
-                    />
-                  )) : <Text style={styles.noHistoryText}>Aún no hay registros para este bebé.</Text>
-                  )}
-                </View>
-              )}
-            </View>
-          );
-        }}
-      />
-    </View>
+                    
+                    {isAddingObservation ? (
+                      <View style={styles.newForm}>
+                        <Text style={styles.detailsHeader}>Añadir Nueva Observación</Text>
+                        <TextInput
+                          style={styles.inputObservation}
+                          placeholder="Escribe una nueva observación..."
+                          value={newObservation[item.id]}
+                          onChangeText={text => setNewObservation({ [item.id]: text })}
+                          multiline
+                        />
+                        <View style={styles.buttonGroup}>
+                          <TouchableOpacity style={[styles.actionButton, styles.saveButton]} onPress={() => submitNewObservation(item.id)}>
+                            <Text style={styles.actionButtonText}>Guardar</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={[styles.actionButton, styles.cancelButton]} onPress={cancelNewObservation}>
+                            <Text style={styles.actionButtonText}>Cancelar</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ) : (
+                      <TouchableOpacity style={styles.addButton} onPress={() => startNewObservation(item.id)}>
+                        <Ionicons name="add-circle-outline" size={22} color="#fff" />
+                        <Text style={styles.addButtonText}>Agregar Observación</Text>
+                      </TouchableOpacity>
+                    )}
+                    
+                    {historiesLoading[item.id] ? <ActivityIndicator /> : historiesError[item.id] ? <Text style={styles.errorText}>Error: {historiesError[item.id]}</Text> : (
+                    histories[item.id]?.length > 0 ? histories[item.id].map((entry) => (
+                      <HistoryEntryCard
+                        key={entry.idHistorial} // ✅ CORRECCIÓN APLICADA AQUÍ
+                        entry={entry}
+                        isEditingContact={editingContactId[item.id] === entry.idHistorial}
+                        onEdit={() => startEditContact(item.id, entry)}
+                        onSave={() => saveContact(item.id, entry.idHistorial)}
+                        onCancel={cancelEditContact}
+                        draftContact={draftContact}
+                        setDraftContact={setDraftContact}
+                      />
+                    )) : <Text style={styles.noHistoryText}>Aún no hay registros para este bebé.</Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          }}
+        />
+      </View>
+    </SafeAreaView>
   );
 }
 
